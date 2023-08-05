@@ -1898,7 +1898,7 @@
     (stroke (width 0.1) (type default)) (layer "Edge.Cuts") (tstamp ea77deff-385f-4fd6-a727-f15c28424b32))
   (gr_arc (start 162.815 102) (mid 161.93632 104.12132) (end 159.815 105)
     (stroke (width 0.1) (type default)) (layer "Edge.Cuts") (tstamp f75d2eaa-5174-499b-8646-bd8dfef5212f))
-  (gr_text "-> 1. VDD\n-> 2. Analog\n-> 3. GND\n-> 4. L\n-> 5. GND\n-> 6. R" (at 153.5 77.6 180) (layer "B.SilkS") (tstamp 1f72bff9-26d9-45c0-8e48-be795b2f5cc9)
+  (gr_text "-> 1. VDC\n-> 2. Analog\n-> 3. GND\n-> 4. L\n-> 5. GND\n-> 6. R" (at 153.5 77.6 180) (layer "B.SilkS") (tstamp 1f72bff9-26d9-45c0-8e48-be795b2f5cc9)
     (effects (font (size 0.8 0.8) (thickness 0.2) bold) (justify left mirror))
   )
   (gr_text "+" (at 51.25 68.75 -90) (layer "F.SilkS") (tstamp 0cc3d464-e1c9-44ff-93ab-11683b42b18f)
