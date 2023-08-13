@@ -2,11 +2,14 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
+use core::pin::pin;
+
 use embassy_executor::Spawner;
+use embassy_futures::select::{select4, Either4};
 use embassy_stm32::{
     bind_interrupts,
     gpio::{Level, OutputOpenDrain, OutputType, Pull, Speed},
-    peripherals::{self, USART1},
+    peripherals::{self, TIM1, USART1},
     rcc::{ClockSrc, PllConfig},
     time::khz,
     timer::{
@@ -15,13 +18,11 @@ use embassy_stm32::{
     },
     usart::{self, Uart},
 };
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
+use futures::StreamExt;
 use modbus::modbus_server;
-use rmodbus::server::context::ModbusContext;
-use static_cell::make_static;
 use {defmt_rtt as _, panic_probe as _};
 
-mod modbus;
+pub mod modbus;
 
 bind_interrupts!(struct Irqs {
     USART1 => usart::InterruptHandler<peripherals::USART1>;
@@ -52,12 +53,6 @@ async fn run(spawner: Spawner) {
     let rs485 = Uart::new_with_de(
         p.USART1, p.PB7, p.PA9, Irqs, p.PA12, p.DMA1_CH1, p.DMA1_CH2, config,
     );
-    let modbus_context = make_static!(Mutex::<ThreadModeRawMutex, _>::new(ModbusContext::<
-        0,
-        2,
-        8,
-        8,
-    >::new()));
 
     let driver_pwm = ComplementaryPwm::new(
         p.TIM1,
@@ -76,5 +71,32 @@ async fn run(spawner: Spawner) {
     let fan_tacho = p.PB9; // CH1
                            // TODO input capture for fan tacho
 
-    spawner.must_spawn(modbus_server(0, rs485, modbus_context));
+    spawner.must_spawn(modbus_server(0, rs485));
+}
+
+#[embassy_executor::task]
+async fn driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
+    let mut enable_listener = pin!(modbus::ENABLE.get_listener().await);
+    let mut frequency_listener = pin!(modbus::DRIVE_FREQUENCY.get_listener().await);
+    let mut measure_frequency_listener = pin!(modbus::COIL_MEASURE_FREQUENCY.get_listener().await);
+    let mut dutycycle_listener = pin!(modbus::COIL_POWER_DUTYCYCLE.get_listener().await);
+
+    driver_pwm.set_dead_time(0);
+
+    loop {
+        let result = select4(
+            enable_listener.next(),
+            frequency_listener.next(),
+            measure_frequency_listener.next(),
+            dutycycle_listener.next(),
+        )
+        .await;
+
+        match result {
+            Either4::First(enable) => todo!(),
+            Either4::Second(_) => todo!(),
+            Either4::Third(_) => todo!(),
+            Either4::Fourth(_) => todo!(),
+        }
+    }
 }
