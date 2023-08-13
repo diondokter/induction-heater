@@ -15,8 +15,8 @@ use rmodbus::server::context::ModbusContext;
 use rmodbus::server::ModbusFrame;
 use rmodbus::ModbusFrameBuf;
 
-static MODBUS_CONTEXT: Mutex<ThreadModeRawMutex, ModbusContext<0, 2, 8, 8>> =
-    Mutex::<ThreadModeRawMutex, _>::new(ModbusContext::<0, 2, 8, 8>::new());
+static MODBUS_CONTEXT: Mutex<ThreadModeRawMutex, ModbusContext<8, 8, 8, 8>> =
+    Mutex::<ThreadModeRawMutex, _>::new(ModbusContext::new());
 
 static MODBUS_LISTENER_REGISTRATIONS: Mutex<
     ThreadModeRawMutex,
@@ -234,16 +234,16 @@ fn ranges_overlap(x: RangeInclusive<u16>, y: RangeInclusive<u16>) -> bool {
 
 // ----- Control (holdings) -----
 /// The amount of times per second the heater coil resonance frequency and voltage max is measured
-pub const COIL_MEASURE_FREQUENCY: ModbusRegister<f32, Holdings> = ModbusRegister::new(0);
+pub const COIL_MEASURE_FREQUENCY: ModbusRegister<u16, Holdings> = ModbusRegister::new(0);
 /// The dutycycle of the PWM that drives the coil. 0..=1
-pub const COIL_POWER_DUTYCYCLE: ModbusRegister<f32, Holdings> = ModbusRegister::new(2);
+pub const COIL_POWER_DUTYCYCLE: ModbusRegister<f32, Holdings> = ModbusRegister::new(1);
 // ----- Control (coils) -----
 pub const ENABLE: ModbusRegister<bool, Coils> = ModbusRegister::new(0);
 
 // ----- Report (inputs) -----
-pub const DRIVE_FREQUENCY: ModbusRegister<f32, Inputs> = ModbusRegister::new(0);
-pub const FAN_RPM: ModbusRegister<f32, Inputs> = ModbusRegister::new(2);
-pub const COIL_VOLTAGE_MAX: ModbusRegister<f32, Inputs> = ModbusRegister::new(4);
+pub const DRIVE_FREQUENCY: ModbusRegister<u32, Inputs> = ModbusRegister::new(0);
+pub const FAN_RPM: ModbusRegister<u16, Inputs> = ModbusRegister::new(2);
+pub const COIL_VOLTAGE_MAX: ModbusRegister<f32, Inputs> = ModbusRegister::new(3);
 // ----- Report (discretes) -----
 pub const LED_GREEN: ModbusRegister<bool, Discretes> = ModbusRegister::new(0);
 pub const LED_RED: ModbusRegister<bool, Discretes> = ModbusRegister::new(1);
