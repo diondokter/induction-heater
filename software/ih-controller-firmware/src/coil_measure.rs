@@ -4,7 +4,7 @@ use embassy_time::Duration;
 use crate::modbus;
 
 #[embassy_executor::task]
-pub async fn measure(
+pub async fn coil_measure(
     _measure_adc: peripherals::ADC1,
     _measure_pin: peripherals::PA0,
     mut measure_dma: peripherals::DMA1_CH3,
@@ -24,7 +24,7 @@ pub async fn measure(
         ))
         .await;
 
-        if !modbus::ENABLE.read().await {
+        if !modbus::COIL_POWER_ENABLE.read().await {
             continue;
         }
 

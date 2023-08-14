@@ -238,12 +238,12 @@ pub const COIL_MEASURE_FREQUENCY: ModbusRegister<u16, Holdings> = ModbusRegister
 /// The dutycycle of the PWM that drives the coil. 0..=1
 pub const COIL_POWER_DUTYCYCLE: ModbusRegister<f32, Holdings> = ModbusRegister::new(1);
 // ----- Control (coils) -----
-pub const ENABLE: ModbusRegister<bool, Coils> = ModbusRegister::new(0);
+pub const COIL_POWER_ENABLE: ModbusRegister<bool, Coils> = ModbusRegister::new(0);
 
 // ----- Report (inputs) -----
-pub const DRIVE_FREQUENCY: ModbusRegister<u32, Inputs> = ModbusRegister::new(0);
-pub const FAN_RPM: ModbusRegister<u16, Inputs> = ModbusRegister::new(2);
-pub const COIL_VOLTAGE_MAX: ModbusRegister<f32, Inputs> = ModbusRegister::new(3);
+pub const COIL_DRIVE_FREQUENCY: ModbusRegister<u32, Inputs> = ModbusRegister::new(0);
+pub const COIL_VOLTAGE_MAX: ModbusRegister<f32, Inputs> = ModbusRegister::new(2);
+pub const FAN_RPM: ModbusRegister<u16, Inputs> = ModbusRegister::new(4);
 // ----- Report (discretes) -----
 pub const LED_GREEN: ModbusRegister<bool, Discretes> = ModbusRegister::new(0);
 pub const LED_RED: ModbusRegister<bool, Discretes> = ModbusRegister::new(1);

@@ -11,9 +11,9 @@ use futures::StreamExt;
 use crate::modbus;
 
 #[embassy_executor::task]
-pub async fn driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
-    let mut enable_listener = pin!(modbus::ENABLE.get_listener().await);
-    let mut frequency_listener = pin!(modbus::DRIVE_FREQUENCY.get_listener().await);
+pub async fn coil_driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
+    let mut enable_listener = pin!(modbus::COIL_POWER_ENABLE.get_listener().await);
+    let mut frequency_listener = pin!(modbus::COIL_DRIVE_FREQUENCY.get_listener().await);
     let mut dutycycle_listener = pin!(modbus::COIL_POWER_DUTYCYCLE.get_listener().await);
 
     // We want the timer to be able to trigger the ADC.
@@ -25,8 +25,8 @@ pub async fn driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
 
     driver_pwm.set_dead_time(0);
 
-    modbus::ENABLE.write(false).await;
-    modbus::DRIVE_FREQUENCY.write(40_000).await;
+    modbus::COIL_POWER_ENABLE.write(false).await;
+    modbus::COIL_DRIVE_FREQUENCY.write(40_000).await;
     modbus::COIL_POWER_DUTYCYCLE.write(1.0).await;
 
     loop {

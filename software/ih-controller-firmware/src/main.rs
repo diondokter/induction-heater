@@ -17,9 +17,9 @@ use embassy_stm32::{
 };
 use {defmt_rtt as _, panic_probe as _};
 
-mod driver;
+mod coil_driver;
+mod coil_measure;
 mod leds;
-mod measure;
 pub mod modbus;
 
 bind_interrupts!(struct Irqs {
@@ -72,6 +72,10 @@ async fn run(spawner: Spawner) {
 
     spawner.must_spawn(leds::leds(led_g, led_r));
     spawner.must_spawn(modbus::modbus_server(0, rs485));
-    spawner.must_spawn(driver::driver(driver_pwm));
-    spawner.must_spawn(measure::measure(measure_adc, measure_pin, measure_dma));
+    spawner.must_spawn(coil_driver::coil_driver(driver_pwm));
+    spawner.must_spawn(coil_measure::coil_measure(
+        measure_adc,
+        measure_pin,
+        measure_dma,
+    ));
 }
