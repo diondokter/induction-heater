@@ -7,7 +7,7 @@ use embassy_stm32::{
     bind_interrupts,
     gpio::{Level, OutputOpenDrain, OutputType, Pull, Speed},
     peripherals::{self, USART1},
-    rcc::{ClockSrc, PllConfig},
+    rcc::{AHBPrescaler, APBPrescaler, ClockSrc, PllConfig},
     time::khz,
     timer::{
         complementary_pwm::{ComplementaryPwm, ComplementaryPwmPin},
@@ -34,6 +34,8 @@ async fn main(spawner: Spawner) {
 async fn run(spawner: Spawner) {
     let mut stm_config = embassy_stm32::Config::default();
     stm_config.rcc.mux = ClockSrc::PLL(PllConfig::default()); // Make the core run at 64 Mhz
+    stm_config.rcc.ahb_pre = AHBPrescaler::NotDivided; // We want everything to run at 64 Mhz
+    stm_config.rcc.apb_pre = APBPrescaler::NotDivided; // Required for the ADC (and we want everything to run at 64 Mhz)
     let p = embassy_stm32::init(Default::default());
 
     // Remap PA11 to PA9. All other IO's are fine

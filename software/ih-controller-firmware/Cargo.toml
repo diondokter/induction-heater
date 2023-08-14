@@ -24,6 +24,7 @@ rmodbus = { version = "0.7.4", default-features = false, features = ["heapless"]
 static_cell = { version = "1.2.0", features = ["nightly"] }
 heapless = { version = "0.7.16", features = ["defmt"] }
 stm32g0 = { version = "0.15", default-features = false, features = ["stm32g030"] }
+critical-section = "1.1.2"
 
 [profile.release]
 lto = true
