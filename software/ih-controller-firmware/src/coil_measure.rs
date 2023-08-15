@@ -146,9 +146,88 @@ pub async fn coil_measure(
                 let nanos = index as u32 * 400 + 66;
                 let volts = sample as f32 * (3.3 / 4095.0);
 
-                (nanos, volts)
+                (nanos as f32 / 1000000000.0, volts)
             });
 
-        defmt::info!("{}", nanos_volt_iter);
+        // We want to be accurate with the frequency.
+        // The voltage follows a sine wave and we want to fit one to the samples.
+        // First we find the highest sample to get a good guess as to what the max voltage is.
+
+        let (sin_peak_time_estimate, max_voltage_estimate) = nanos_volt_iter.clone().fold(
+            (0.0, 0.0f32),
+            |(acc_time, acc_voltage), (time, voltage)| {
+                if voltage > acc_voltage {
+                    (time, voltage)
+                } else {
+                    (acc_time, acc_voltage)
+                }
+            },
+        );
+
+        let initial_frequency_estimate = 1.0 / (sin_peak_time_estimate * 4.0);
+        defmt::info!(
+            "Initial frequency estimate: {} (@ peak {} volts)",
+            initial_frequency_estimate,
+            max_voltage_estimate
+        );
+
+        let initial_fit_error = calculate_fit_error(
+            nanos_volt_iter.clone(),
+            initial_frequency_estimate,
+            max_voltage_estimate,
+        );
+        defmt::info!("Initial fit error: {}", initial_fit_error);
+
+        // Let's assume the estimate is at most one sample off
+        let max_frequency = 1.0 / ((sin_peak_time_estimate - 0.0000004) * 4.0);
+        let min_frequency = 1.0 / ((sin_peak_time_estimate + 0.0000004) * 4.0);
+
+        defmt::info!(
+            "Frequency range {{ max: {}, min: {} }}",
+            max_frequency,
+            min_frequency
+        );
+
+        const NUM_FREQS_TEST: u8 = 32;
+        let test_frequencies = (0..NUM_FREQS_TEST).map(|i| {
+            min_frequency + i as f32 * (max_frequency - min_frequency) / (NUM_FREQS_TEST - 1) as f32
+        });
+
+        let fit_errors = test_frequencies.map(|freq| {
+            (
+                freq,
+                calculate_fit_error(nanos_volt_iter.clone(), freq, max_voltage_estimate),
+            )
+        });
+
+        let best_frequency = fit_errors.fold(
+            (0.0f32, f32::INFINITY),
+            |(acc_freq, acc_fit), (freq, fit)| {
+                if fit < acc_fit {
+                    (freq, fit)
+                } else {
+                    (acc_freq, acc_fit)
+                }
+            },
+        );
+
+        defmt::info!(
+            "Best frequency: {} (@ fit {})",
+            best_frequency.0,
+            best_frequency.1
+        );
     }
+}
+
+fn calculate_fit_error(
+    sample_iter: impl Iterator<Item = (f32, f32)>,
+    frequency: f32,
+    max_value: f32,
+) -> f32 {
+    sample_iter
+        .map(|(time, value)| {
+            let sin_value = libm::sinf(time * frequency * core::f32::consts::TAU) * max_value;
+            libm::fabsf(value - sin_value)
+        })
+        .sum()
 }
