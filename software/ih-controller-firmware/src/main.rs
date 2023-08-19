@@ -21,9 +21,11 @@ mod coil_driver;
 mod coil_measure;
 mod leds;
 pub mod modbus;
+mod tacho_measure;
 
 bind_interrupts!(struct Irqs {
     USART1 => usart::InterruptHandler<peripherals::USART1>;
+    TIM17 => tacho_measure::InterruptHandler;
 });
 
 #[embassy_executor::main]
@@ -68,9 +70,8 @@ async fn run(spawner: Spawner) {
         khz(40),
     );
 
-    let _fan_tacho_timer = p.TIM17;
-    let _fan_tacho = p.PB9; // CH1
-                            // TODO input capture for fan tacho
+    let fan_tacho_timer = p.TIM17;
+    let fan_tacho_pin = p.PB9; // CH1
 
     spawner.must_spawn(leds::leds(led_g, led_r));
     spawner.must_spawn(modbus::modbus_server(0, rs485));
@@ -80,4 +81,5 @@ async fn run(spawner: Spawner) {
         measure_pin,
         measure_dma,
     ));
+    spawner.must_spawn(tacho_measure::tacho_measure(fan_tacho_timer, fan_tacho_pin));
 }
