@@ -239,7 +239,7 @@ fn calculate_fit_error(
 
     sample_iter
         .map(|(time, value)| {
-            let sin_value = (time * frequency * core::f32::consts::TAU).sin() * max_value;
+            let sin_value = (time * frequency * core::f32::consts::TAU).sin().max(0.0) * max_value;
             (value - sin_value).abs()
         })
         .sum()
