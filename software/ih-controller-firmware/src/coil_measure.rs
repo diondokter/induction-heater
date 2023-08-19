@@ -18,11 +18,197 @@ pub async fn coil_measure(
 
     modbus::COIL_MEASURE_FREQUENCY.write(10).await;
 
-    let mut adc_sample_buffer = [0u16; 128];
+    let mut adc_sample_buffer = [0u16; NUM_SAMPLES];
+    let mut coil_sample_buffer = [CoilSample::EMPTY; NUM_SAMPLES];
 
     // ----- Init the ADC -----
     let adc = pac::ADC1;
+    init_adc(&adc).await;
 
+    loop {
+        embassy_time::Timer::after(Duration::from_hz(
+            modbus::COIL_MEASURE_FREQUENCY.read().await.clamp(1, 1000) as u64,
+        ))
+        .await;
+
+        if !modbus::COIL_POWER_ENABLE.read().await {
+            continue;
+        }
+
+        start_adc(&adc, &mut measure_dma, &mut adc_sample_buffer).await;
+
+        // Take the samples and turn them into full coil samples
+        for (index, (sample, coil_sample)) in adc_sample_buffer
+            .iter()
+            .zip(coil_sample_buffer.iter_mut())
+            .enumerate()
+        {
+            *coil_sample = CoilSample::new(index, *sample);
+        }
+
+        // We want to be accurate with the frequency.
+        // The voltage follows a sine wave and we want to fit one to the samples.
+        // First we find the highest sample to get a good guess as to what the max voltage is.
+        // This should be pretty accurate since the peak of the sine wave is pretty flat.
+        let peak_sample = calculate_peak_sample(&coil_sample_buffer);
+
+        // Let's assume the estimate is at most one sample off
+        let mut max_freq = 1.0 / ((peak_sample.time - ADC_SAMPLE_PERIOD) * 4.0);
+        let mut min_freq = 1.0 / ((peak_sample.time + ADC_SAMPLE_PERIOD) * 4.0);
+
+        const NUM_FREQS_TEST: u32 = 11;
+        const MAX_FREQ_ERROR: f32 = 5.0;
+
+        while (max_freq - min_freq) > MAX_FREQ_ERROR {
+            (min_freq, max_freq) = find_best_fit(
+                &coil_sample_buffer,
+                peak_sample,
+                min_freq,
+                max_freq,
+                NUM_FREQS_TEST,
+            );
+        }
+
+        let final_frequency = (min_freq + max_freq) / 2.0;
+        defmt::info!("Final freq: {}", final_frequency);
+
+        modbus::COIL_DRIVE_FREQUENCY
+            .write(final_frequency as u32)
+            .await;
+        modbus::COIL_VOLTAGE_MAX.write(peak_sample.voltage).await;
+    }
+}
+
+/// The amount of samples to take
+const NUM_SAMPLES: usize = 64;
+
+/// The clock speed of the ADC peripheral
+const ADC_CLOCK: f32 = 64_000_000.0;
+/// The time of one ADC clock tick
+const ADC_CLOCK_TIME: f32 = 1.0 / ADC_CLOCK;
+/// The amount of ADC clock tick delays after start event before the ADC starts
+const ADC_TRIGGER_DELAY_CLOCKS: f32 = 3.5;
+/// The amount of time between trigger and ADC start
+const ADC_TRIGGER_DELAY_TIME: f32 = ADC_CLOCK_TIME * ADC_TRIGGER_DELAY_CLOCKS;
+/// The sample speed of the ADC
+const ADC_SAMPLE_SPEED: f32 = 2_500_000.0;
+/// The time one sample takes
+const ADC_SAMPLE_PERIOD: f32 = 1.0 / ADC_SAMPLE_SPEED;
+/// The amount of ADC clocks used as the sampling time. The sample and hold will be held after these clocks.
+const ADC_CLOCKS_PER_SAMPLE: f32 = 1.5;
+/// The amount of time used as the sampling time
+const ADC_SAMPLE_TIME: f32 = ADC_CLOCK_TIME * ADC_CLOCKS_PER_SAMPLE;
+/// The time of a sample by index after the start of the trigger
+fn time_of_sample(index: usize) -> f32 {
+    ADC_TRIGGER_DELAY_TIME + index as f32 * ADC_SAMPLE_PERIOD + ADC_SAMPLE_TIME
+}
+/// The amount of bits the ADC samples with
+const ADC_SAMPLE_BITS: u16 = 12;
+/// The maximum value of a sample
+const ADC_SAMPLE_MAX_VALUE: u16 = (1 << ADC_SAMPLE_BITS) - 1;
+/// The reference voltage of the ADC (max sample value voltage)
+const ADC_VREF: f32 = 3.3;
+/// First resistor value (ohms) of the divider (connected to coil)
+const VOLTAGE_DIVIDER_R1: f32 = 10_000.0;
+/// Second resistor value (ohms) of the divider (connected to ground)
+const VOLTAGE_DIVIDER_R2: f32 = 120.0;
+/// Calculates the coil voltage based on the given sample
+fn voltage_of_sample(sample: u16) -> f32 {
+    let adc_voltage = sample as f32 * ADC_VREF / ADC_SAMPLE_MAX_VALUE as f32;
+    adc_voltage * (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2) / VOLTAGE_DIVIDER_R2
+}
+
+fn calculate_peak_sample(samples: &[CoilSample; NUM_SAMPLES]) -> &CoilSample {
+    samples
+        .iter()
+        .fold((&CoilSample::EMPTY, false), |(acc_sample, done), sample| {
+            if sample.voltage > acc_sample.voltage && !done {
+                (sample, done)
+            } else if sample.voltage < acc_sample.voltage * 0.9 && !done {
+                (acc_sample, true)
+            } else {
+                (acc_sample, done)
+            }
+        })
+        .0
+}
+
+fn find_best_fit(
+    samples: &[CoilSample; NUM_SAMPLES],
+    peak_sample: &CoilSample,
+    min_freq: f32,
+    max_freq: f32,
+    num_freqs_test: u32,
+) -> (f32, f32) {
+    defmt::info!("Frequency range {{ max: {}, min: {} }}", max_freq, min_freq);
+
+    let freq_step = (max_freq - min_freq) / (num_freqs_test - 1) as f32;
+
+    let test_frequencies = (0..num_freqs_test).map(|i| min_freq + i as f32 * freq_step);
+
+    let mut best_frequency = 0.0;
+    let mut best_fit = f32::INFINITY;
+
+    for freq in test_frequencies {
+        let fit = calculate_fit_error(samples, freq, peak_sample);
+        defmt::info!("Freq: {}, fit: {}", freq, fit);
+
+        if fit < best_fit {
+            best_fit = fit;
+            best_frequency = freq;
+        } else {
+            break;
+        }
+    }
+
+    defmt::info!("Best frequency: {} (@ fit {})", best_frequency, best_fit);
+
+    (
+        best_frequency - freq_step * core::f32::consts::FRAC_1_SQRT_2,
+        best_frequency + freq_step * core::f32::consts::FRAC_1_SQRT_2,
+    )
+}
+
+fn calculate_fit_error(
+    samples: &[CoilSample; NUM_SAMPLES],
+    frequency: f32,
+    peak_sample: &CoilSample,
+) -> f32 {
+    use micromath::F32Ext;
+
+    samples
+        .iter()
+        .map(|sample| {
+            let ideal_voltage = (sample.time * frequency * core::f32::consts::TAU)
+                .sin()
+                .max(0.0)
+                * peak_sample.voltage;
+            (sample.voltage - ideal_voltage).abs()
+        })
+        .sum()
+}
+
+#[derive(Clone, Copy, defmt::Format)]
+struct CoilSample {
+    time: f32,
+    voltage: f32,
+}
+
+impl CoilSample {
+    const EMPTY: Self = Self {
+        time: 0.0,
+        voltage: 0.0,
+    };
+
+    fn new(index: usize, sample: u16) -> Self {
+        Self {
+            time: time_of_sample(index),
+            voltage: voltage_of_sample(sample),
+        }
+    }
+}
+
+async fn init_adc(adc: &embassy_stm32::pac::adc::Adc) {
     // Check if our system clocks are in order.
     // APB must not be divided for the adc max clock setting to work
     // while not having jitter from the timer trigger.
@@ -91,156 +277,31 @@ pub async fn coil_measure(
     adc.isr().modify(|reg| {
         reg.set_eos(true);
     });
-
-    loop {
-        embassy_time::Timer::after(Duration::from_hz(
-            modbus::COIL_MEASURE_FREQUENCY.read().await.clamp(1, 1000) as u64,
-        ))
-        .await;
-
-        if !modbus::COIL_POWER_ENABLE.read().await {
-            continue;
-        }
-
-        // Wait for the last conversion to be done
-        while adc.cr().read().adstp() {
-            embassy_futures::yield_now().await;
-        }
-
-        let dma_transfer = unsafe {
-            embassy_stm32::dma::Transfer::new_read::<u16>(
-                &mut measure_dma,
-                5,                         // ADC request
-                ADC1.dr().as_ptr().cast(), // The result register of the adc
-                &mut adc_sample_buffer,
-                TransferOptions::default(),
-            )
-        };
-
-        adc.cr().modify(|reg| reg.set_adstart(true));
-
-        dma_transfer.await;
-
-        adc.cr().modify(|reg| reg.set_adstp(true));
-
-        // Take the samples and do the calculations
-
-        // Stats:
-        // ADC clock = 64Mhz
-        // ADC trigger delay = 3.5 clocks = 54.6875ns
-        // ADC sample speed = 2.5Msps = 400ns
-        // Time per sample = 1.5 clocks = 23.4375ns
-        // We'll take the middle point of the sample period as THE time of the sample.
-        //
-        // Time of sample = index * 400ns + 54.6875ns + 23.4375ns/2 = index * 400ns + ~66ns
-        //
-        // Sample is 12-bit = 0..=4095
-        // Vref = 3.3v
-        //
-        // Voltage of sample = sample * 3.3 / 4095.0 = sample *
-
-        let nanos_volt_iter = adc_sample_buffer
-            .iter()
-            .enumerate()
-            .map(|(index, &sample)| {
-                let nanos = index as u32 * 400 + 66;
-                let volts = sample as f32 * (3.3 / 4095.0);
-
-                (nanos as f32 / 1000000000.0, volts)
-            });
-
-        // We want to be accurate with the frequency.
-        // The voltage follows a sine wave and we want to fit one to the samples.
-        // First we find the highest sample to get a good guess as to what the max voltage is.
-
-        let (sin_peak_time_estimate, max_voltage_estimate, _) = nanos_volt_iter.clone().fold(
-            (0.0, 0.0f32, false),
-            |(acc_time, acc_voltage, done), (time, voltage)| {
-                if voltage > acc_voltage && !done {
-                    (time, voltage, done)
-                } else if voltage < acc_voltage * 0.9 && !done {
-                    (acc_time, acc_voltage, true)
-                } else {
-                    (acc_time, acc_voltage, done)
-                }
-            },
-        );
-
-        let initial_frequency_estimate = 1.0 / (sin_peak_time_estimate * 4.0);
-        defmt::info!(
-            "Initial frequency estimate: {} (@ peak {} volts)",
-            initial_frequency_estimate,
-            max_voltage_estimate
-        );
-
-        // Let's assume the estimate is at most one sample off
-        let mut max_freq = 1.0 / ((sin_peak_time_estimate - 0.0000004) * 4.0);
-        let mut min_freq = 1.0 / ((sin_peak_time_estimate + 0.0000004) * 4.0);
-
-        const NUM_FREQS_TEST: u32 = 11;
-        const MAX_FREQ_ERROR: f32 = 1.0;
-
-        while (max_freq - min_freq) > MAX_FREQ_ERROR {
-            (min_freq, max_freq) = find_best_fit(
-                nanos_volt_iter.clone(),
-                max_voltage_estimate,
-                min_freq,
-                max_freq,
-                NUM_FREQS_TEST,
-            );
-        }
-
-        defmt::info!("Final freq: {}", (min_freq + max_freq) / 2.0);
-    }
 }
 
-fn find_best_fit(
-    nanos_volt_iter: impl Iterator<Item = (f32, f32)> + Clone,
-    max_voltage_estimate: f32,
-    min_freq: f32,
-    max_freq: f32,
-    num_freqs_test: u32,
-) -> (f32, f32) {
-    defmt::info!("Frequency range {{ max: {}, min: {} }}", max_freq, min_freq);
-
-    let freq_step = (max_freq - min_freq) / (num_freqs_test - 1) as f32;
-
-    let test_frequencies = (0..num_freqs_test).map(|i| min_freq + i as f32 * freq_step);
-
-    let mut best_frequency = 0.0;
-    let mut best_fit = f32::INFINITY;
-
-    for freq in test_frequencies {
-        let fit = calculate_fit_error(nanos_volt_iter.clone(), freq, max_voltage_estimate);
-        defmt::info!("Freq: {}, fit: {}", freq, fit);
-
-        if fit < best_fit {
-            best_fit = fit;
-            best_frequency = freq;
-        } else {
-            break;
-        }
+async fn start_adc(
+    adc: &embassy_stm32::pac::adc::Adc,
+    measure_dma: &mut peripherals::DMA1_CH3,
+    sample_buffer: &mut [u16],
+) {
+    // Wait for the last conversion to be done
+    while adc.cr().read().adstp() {
+        embassy_futures::yield_now().await;
     }
 
-    defmt::info!("Best frequency: {} (@ fit {})", best_frequency, best_fit);
+    let dma_transfer = unsafe {
+        embassy_stm32::dma::Transfer::new_read::<u16>(
+            measure_dma,
+            5,                         // ADC request
+            ADC1.dr().as_ptr().cast(), // The result register of the adc
+            sample_buffer,
+            TransferOptions::default(),
+        )
+    };
 
-    (
-        best_frequency - freq_step * core::f32::consts::FRAC_1_SQRT_2,
-        best_frequency + freq_step * core::f32::consts::FRAC_1_SQRT_2,
-    )
-}
+    adc.cr().modify(|reg| reg.set_adstart(true));
 
-fn calculate_fit_error(
-    sample_iter: impl Iterator<Item = (f32, f32)>,
-    frequency: f32,
-    max_value: f32,
-) -> f32 {
-    use micromath::F32Ext;
+    dma_transfer.await;
 
-    sample_iter
-        .map(|(time, value)| {
-            let sin_value = (time * frequency * core::f32::consts::TAU).sin().max(0.0) * max_value;
-            (value - sin_value).abs()
-        })
-        .sum()
+    adc.cr().modify(|reg| reg.set_adstp(true));
 }

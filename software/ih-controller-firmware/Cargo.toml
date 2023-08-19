@@ -33,6 +33,7 @@ debug = true
 opt-level = "z"
 panic = "abort"
 codegen-units = 1
+incremental = false
 
 [patch.crates-io]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "c1da2c0" }
