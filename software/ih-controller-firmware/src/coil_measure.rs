@@ -67,6 +67,9 @@ pub async fn coil_measure(
                 max_freq,
                 NUM_FREQS_TEST,
             );
+
+            // Give other tasks a chance to run too
+            embassy_futures::yield_now().await;
         }
 
         let final_frequency = (min_freq + max_freq) / 2.0;
