@@ -144,7 +144,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -155,7 +155,7 @@ checksum = "836a9bbc7ad63342d6d6e7b815ccab164bc77a2d95d84bc3117a8c0d5c98e2d5"
 dependencies = [
  "darling_core",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -178,7 +178,7 @@ dependencies = [
  "proc-macro-error",
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -212,14 +212,14 @@ dependencies = [
 [[package]]
 name = "embassy-embedded-hal"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "defmt",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
  "embedded-hal 0.2.7",
- "embedded-hal 1.0.0-alpha.11",
+ "embedded-hal 1.0.0-rc.1",
  "embedded-hal-async",
  "embedded-storage",
  "embedded-storage-async",
@@ -229,7 +229,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor"
 version = "0.2.1"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "atomic-polyfill 1.0.3",
  "cortex-m",
@@ -244,12 +244,12 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 
 [[package]]
 name = "embassy-hal-internal"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -260,18 +260,18 @@ dependencies = [
 [[package]]
 name = "embassy-macros"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "darling",
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
 name = "embassy-net-driver"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "defmt",
 ]
@@ -279,7 +279,7 @@ dependencies = [
 [[package]]
 name = "embassy-stm32"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "atomic-polyfill 1.0.3",
  "bit_field",
@@ -298,7 +298,7 @@ dependencies = [
  "embassy-time",
  "embassy-usb-driver",
  "embedded-hal 0.2.7",
- "embedded-hal 1.0.0-alpha.11",
+ "embedded-hal 1.0.0-rc.1",
  "embedded-hal-async",
  "embedded-io",
  "embedded-io-async",
@@ -319,7 +319,7 @@ dependencies = [
 [[package]]
 name = "embassy-sync"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -331,7 +331,7 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.1.2"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "atomic-polyfill 1.0.3",
  "cfg-if",
@@ -345,7 +345,7 @@ dependencies = [
 [[package]]
 name = "embassy-usb-driver"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=c1da2c0#c1da2c0219667085124c47d8059ffbf077adaf9d"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=906ab06#906ab06a6e132dffc663c711842615ce16806e74"
 dependencies = [
  "defmt",
 ]
@@ -362,17 +362,17 @@ dependencies = [
 
 [[package]]
 name = "embedded-hal"
-version = "1.0.0-alpha.11"
+version = "1.0.0-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7724ebabcadfeb15920571dd727bc8ccde8586e52f2890bdb8182fdf42c3ff2"
+checksum = "2894bc2f0457b8ca3d6b8ab8aad64d9337583672494013457f86c5a9146c0e22"
 
 [[package]]
 name = "embedded-hal-async"
-version = "0.2.0-alpha.2"
+version = "1.0.0-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "918285ec7b18edb024d4adc64f6f16cdc7c4d72eadfc85c3313d1e0ff40e0229"
+checksum = "76a8a3517745342155b3b00895a0f78417a453fb800d97a8bf4777d5720acde9"
 dependencies = [
- "embedded-hal 1.0.0-alpha.11",
+ "embedded-hal 1.0.0-rc.1",
 ]
 
 [[package]]
@@ -459,7 +459,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -537,7 +537,6 @@ dependencies = [
  "embassy-stm32",
  "embassy-sync",
  "embassy-time",
- "embedded-hal 0.2.7",
  "futures",
  "heapless",
  "micromath",
@@ -650,9 +649,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.32"
+version = "1.0.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50f3b39ccfb720540debaa0164757101c08ecb8d326b15358ce76a62c7e85965"
+checksum = "5267fca4496028628a95160fc423a33e8b2e6af8a5302579e322e4b520293cae"
 dependencies = [
  "proc-macro2",
 ]
@@ -766,7 +765,7 @@ dependencies = [
 [[package]]
 name = "stm32-metapac"
 version = "13.0.0"
-source = "git+https://github.com/embassy-rs/stm32-data-generated?tag=stm32-data-7eddb78e705905af4c1dd2359900db3e78a3c500#9b8e80a5621de248a525cdf0ccb2c14750b2ca96"
+source = "git+https://github.com/embassy-rs/stm32-data-generated?tag=stm32-data-2b87e34c661e19ff6dc603fabfe7fe99ab7261f7#e5ba5a14cd38b97878a1b67b5446a315cdd6a49c"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -802,9 +801,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.28"
+version = "2.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04361975b3f5e348b2189d8dc55bc942f278b2d482a6a0365de5bdd62d351567"
+checksum = "c324c494eba9d92503e6f1ef2e6df781e78f6a7705a0202d9801b198807d518a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -813,22 +812,22 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.44"
+version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "611040a08a0439f8248d1990b111c95baa9c704c805fa1f62104b39655fd7f90"
+checksum = "97a802ec30afc17eee47b2855fc72e0c4cd62be9b4efe6591edde0ec5bd68d8f"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.44"
+version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "090198534930841fab3a5d1bb637cde49e339654e606195f8d9c76eeb081dc96"
+checksum = "6bb623b56e39ab7dcd4b1b98bb6c8f8d907ed255b18de254088016b27a8ee19b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
