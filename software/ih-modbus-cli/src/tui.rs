@@ -12,8 +12,7 @@ use crossterm::{
 };
 use ratatui::{
     prelude::*,
-    text::Spans,
-    widgets::{List, ListItem, *},
+    widgets::{*},
 };
 
 use crate::ih_modbus::InductionHeaterState;
