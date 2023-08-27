@@ -1,10 +1,10 @@
+use cortex_m::peripheral::NVIC;
 use embassy_stm32::gpio::low_level::{AFType, Pin};
 use embassy_stm32::interrupt;
 use embassy_stm32::peripherals::{PB9, TIM17};
 use embassy_stm32::rcc::low_level::RccPeripheral;
-use embassy_stm32::timer::low_level::Basic16bitInstance;
 use embassy_stm32::timer::Channel1Pin;
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant};
 
@@ -12,17 +12,23 @@ use crate::modbus;
 
 #[embassy_executor::task]
 pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
+    defmt::trace!("Initializing tachometer measure");
+
     // Set the pin to the right AF mode
     pin.set_as_af(pin.af_num(), AFType::Input);
 
     const CLOCK_FREQ: f32 = 64_000_000.0;
-    const PRESCALER: f32 = 128.0;
+    const PRESCALER: f32 = 1024.0;
     const TIMER_FREQ: f32 = CLOCK_FREQ / PRESCALER;
     const TIMER_PERIOD: f32 = 1.0 / TIMER_FREQ;
 
+    TIM17::enable();
+
     let regs = unsafe { &*stm32g0::stm32g030::TIM17::ptr() };
-    // Make sure the clock runs at 64 MHz
+    // Be sure the clock runs at 64 MHz
     defmt::assert_eq!(TIM17::frequency().0, CLOCK_FREQ as u32);
+    // Only let counter updates make update interrupts
+    regs.cr1.modify(|_, w| w.urs().counter_only());
     // Set the prescaler
     regs.psc.write(|w| w.psc().variant(PRESCALER as u16 - 1));
     // Wrap the least amount possible
@@ -48,14 +54,23 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
     // Start the timer
     regs.cr1.modify(|_, w| w.cen().enabled());
 
+    unsafe {
+        NVIC::unmask(embassy_stm32::pac::Interrupt::TIM17);
+    }
+
+    defmt::trace!("Done tacho init");
+
     let mut previous_capture: u32 = 0;
     let mut next_capture: u32 = 0;
 
     let mut last_capture_time = Instant::now();
 
     loop {
+        defmt::trace!("Waiting for tacho capture");
         let capture = TIM17_CH1_INPUT_CAPTURE.wait().await;
         let mut error = false;
+
+        defmt::trace!("Tacho capture: {}", capture);
 
         match capture {
             Event::Reload(value) => next_capture += value as u32,
@@ -63,7 +78,7 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
                 next_capture += value as u32;
 
                 let diff = next_capture - previous_capture;
-                previous_capture = next_capture % 0x1_0000;
+                previous_capture = next_capture;
 
                 let time_diff = diff as f32 * TIMER_PERIOD;
                 // Calculate and divide by 2 because we get two pulses per rotation
@@ -80,7 +95,7 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
             }
         }
 
-        if last_capture_time.elapsed() > Duration::from_secs(1) {
+        if last_capture_time.elapsed() > Duration::from_secs(5) {
             error |= true;
         }
 
@@ -90,36 +105,33 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
     }
 }
 
-static TIM17_CH1_INPUT_CAPTURE: Signal<ThreadModeRawMutex, Event> = Signal::new();
+static TIM17_CH1_INPUT_CAPTURE: Signal<CriticalSectionRawMutex, Event> = Signal::new();
 
-/// Interrupt handler.
-pub struct InterruptHandler {}
+#[cortex_m_rt::interrupt]
+unsafe fn TIM17() {
+    let regs = unsafe { &*stm32g0::stm32g030::TIM17::ptr() };
 
-impl interrupt::typelevel::Handler<<TIM17 as Basic16bitInstance>::Interrupt> for InterruptHandler {
-    unsafe fn on_interrupt() {
-        let regs = unsafe { &*stm32g0::stm32g030::TIM17::ptr() };
+    let sr = regs.sr.read();
+    let compare_interrupt = sr.cc1if().bit_is_set();
+    let update_interrupt = sr.uif().is_update_pending();
 
-        let sr = regs.sr.read();
-        let compare_interrupt = sr.cc1if().bit_is_set();
-        let update_interrupt = sr.uif().is_update_pending();
-
-        if compare_interrupt {
-            let capture_value = regs.ccr1.read().ccr1().bits();
-            TIM17_CH1_INPUT_CAPTURE.signal(Event::Capture(capture_value));
-        }
-
-        if update_interrupt {
-            // We've reloaded
-            let reload_value = regs.arr.read().arr().bits();
-            TIM17_CH1_INPUT_CAPTURE.signal(Event::Reload(reload_value));
-        }
-
-        // If we miss a capture, this interrupt gets active, but we'll just ignore it and turn it off
-        // We also clear the update interrupt flag
-        regs.sr.modify(|_, w| w.cc1of().set_bit().uif().clear());
+    if compare_interrupt {
+        let capture_value = regs.ccr1.read().ccr1().bits();
+        TIM17_CH1_INPUT_CAPTURE.signal(Event::Capture(capture_value));
     }
+
+    if update_interrupt {
+        // We've reloaded
+        let reload_value = regs.arr.read().arr().bits();
+        TIM17_CH1_INPUT_CAPTURE.signal(Event::Reload(reload_value));
+    }
+
+    // If we miss a capture, this interrupt gets active, but we'll just ignore it and turn it off
+    // We also clear the update interrupt flag
+    regs.sr.modify(|_, w| w.cc1if().clear_bit().uif().clear());
 }
 
+#[derive(defmt::Format)]
 enum Event {
     /// Timer overflowed at the given point and reset to 0
     Reload(u16),

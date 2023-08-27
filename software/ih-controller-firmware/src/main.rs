@@ -15,6 +15,7 @@ use embassy_stm32::{
     },
     usart::{self, Uart},
 };
+
 use {defmt_rtt as _, panic_probe as _};
 
 mod coil_driver;
@@ -25,7 +26,6 @@ mod tacho_measure;
 
 bind_interrupts!(struct Irqs {
     USART1 => usart::InterruptHandler<peripherals::USART1>;
-    TIM17 => tacho_measure::InterruptHandler;
 });
 
 #[embassy_executor::main]
@@ -38,7 +38,7 @@ async fn run(spawner: Spawner) {
     stm_config.rcc.mux = ClockSrc::PLL(PllConfig::default()); // Make the core run at 64 Mhz
     stm_config.rcc.ahb_pre = AHBPrescaler::NotDivided; // We want everything to run at 64 Mhz
     stm_config.rcc.apb_pre = APBPrescaler::NotDivided; // Required for the ADC (and we want everything to run at 64 Mhz)
-    let p = embassy_stm32::init(Default::default());
+    let p = embassy_stm32::init(stm_config);
 
     // Remap PA11 to PA9. All other IO's are fine
     embassy_stm32::pac::SYSCFG
@@ -74,7 +74,7 @@ async fn run(spawner: Spawner) {
     let fan_tacho_pin = p.PB9; // CH1
 
     spawner.must_spawn(leds::leds(led_g, led_r));
-    spawner.must_spawn(modbus::modbus_server(0, rs485));
+    spawner.must_spawn(modbus::modbus_server(1, rs485));
     spawner.must_spawn(coil_driver::coil_driver(driver_pwm));
     spawner.must_spawn(coil_measure::coil_measure(
         measure_adc,

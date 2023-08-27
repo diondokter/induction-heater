@@ -23,8 +23,8 @@ pub async fn leds(
         let result = select(led_g_listener.next(), led_r_listener.next()).await;
 
         match result {
-            Either::First(Some(value)) => led_g.set_level(value.into()),
-            Either::Second(Some(value)) => led_r.set_level(value.into()),
+            Either::First(Some(value)) => led_g.set_level((!value).into()),
+            Either::Second(Some(value)) => led_r.set_level((!value).into()),
             _ => defmt::unreachable!(),
         }
     }

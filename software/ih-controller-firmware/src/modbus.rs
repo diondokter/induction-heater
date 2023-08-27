@@ -34,11 +34,13 @@ pub(crate) async fn modbus_server(
 
     loop {
         defmt::trace!("Reading modbus uart");
-        if let Err(e) = rs485.read_until_idle(&mut receive_buffer).await {
-            defmt::error!("Could not read rs485 bus: {}", e);
-            continue;
-        }
-        defmt::trace!("Received modbus frame");
+        let _rx_len = match rs485.read_until_idle(&mut receive_buffer).await {
+            Ok(len) => len,
+            Err(e) => {
+                defmt::error!("Could not read rs485 bus: {}", e);
+                continue;
+            }
+        };
 
         let mut frame = ModbusFrame::new(
             unit_id,
