@@ -76,10 +76,10 @@ async fn run(spawner: Spawner) {
     spawner.must_spawn(leds::leds(led_g, led_r));
     spawner.must_spawn(modbus::modbus_server(1, rs485));
     spawner.must_spawn(coil_driver::coil_driver(driver_pwm));
-    spawner.must_spawn(coil_measure::coil_measure(
-        measure_adc,
-        measure_pin,
-        measure_dma,
-    ));
+    // spawner.must_spawn(coil_measure::coil_measure(
+    //     measure_adc,
+    //     measure_pin,
+    //     measure_dma,
+    // ));
     spawner.must_spawn(tacho_measure::tacho_measure(fan_tacho_timer, fan_tacho_pin));
 }

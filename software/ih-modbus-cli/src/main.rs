@@ -28,11 +28,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(Mutex::new(InductionHeaterState::default()));
     let state_tui = state.clone();
 
-    let modbus_thread = thread::spawn(|| ih_modbus::run(args, state));
-    let tui_thread = thread::spawn(|| tui::run_tui(state_tui));
-
-    modbus_thread.join().unwrap().unwrap();
-    tui_thread.join().unwrap().unwrap();
+    thread::spawn(|| ih_modbus::run(args, state));
+    tui::run_tui(state_tui).unwrap();
 
     Ok(())
 }

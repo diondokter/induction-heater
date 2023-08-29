@@ -13,3 +13,5 @@ ratatui = { version = "0.22.0", features = ["all-widgets"] }
 anyhow = "1.0.75"
 crossterm = "0.27.0"
 getset = "0.1.2"
+enumflags2 = "0.7.7"
+num-format = { version = "0.4.4", features = ["with-system-locale"] }

@@ -1,16 +1,19 @@
 use std::{
     sync::{Arc, Mutex},
-    time::Duration,
+    time::Duration
 };
 
-use getset::{CopyGetters, Setters};
+use getset::{CopyGetters, Getters, Setters};
 use rmodbus::{client::ModbusRequest, guess_response_frame_len, ModbusProto};
 use serialport::SerialPort;
 
-use crate::Args;
+use crate::{Args, tui::GraphSelection};
 
-#[derive(Debug, Clone, Default, CopyGetters, Setters)]
+#[derive(Debug, Default, Clone, CopyGetters, Setters, Getters)]
 pub struct InductionHeaterState {
+    #[getset(get = "pub")]
+    error: Option<Arc<anyhow::Error>>,
+
     #[getset(get_copy = "pub")]
     led_green: bool,
     #[getset(get_copy = "pub")]
@@ -18,28 +21,50 @@ pub struct InductionHeaterState {
 
     #[getset(get_copy = "pub")]
     coil_drive_frequency: u32,
+    coil_drive_frequencies: Vec<(f64, f64)>,
+
     #[getset(get_copy = "pub")]
     coil_voltage_max: f32,
+    coil_voltage_maxs: Vec<(f64, f64)>,
+
     #[getset(get_copy = "pub")]
     fan_rpm: u16,
+    fan_rpms: Vec<(f64, f64)>,
 
     #[getset(get_copy = "pub")]
     enabled: bool,
     #[getset(get_copy = "pub", set = "pub")]
     target_enabled: bool,
-
-    // pub const COIL_DRIVE_FREQUENCY: ModbusRegister<u32, Inputs> = ModbusRegister::new(0);
-    // pub const COIL_VOLTAGE_MAX: ModbusRegister<f32, Inputs> = ModbusRegister::new(2);
-    // pub const FAN_RPM: ModbusRegister<u16, Inputs> = ModbusRegister::new(4);
-
 }
 
-pub fn run(args: Arc<Args>, state: Arc<Mutex<InductionHeaterState>>) -> Result<(), anyhow::Error> {
+impl InductionHeaterState {
+    pub fn get_data(&self, selection: GraphSelection) -> &[(f64, f64)] {
+        match selection {
+            GraphSelection::CoilDriveFrequency => &self.coil_drive_frequencies,
+            GraphSelection::CoilVoltageMax => &self.coil_voltage_maxs,
+            GraphSelection::FanRpm => &self.fan_rpms,
+        }
+    }
+}
+
+pub fn run(args: Arc<Args>, state: Arc<Mutex<InductionHeaterState>>) -> ! {
+    loop {
+        let error = run_inner(args.clone(), state.clone()).unwrap_err();
+        state.lock().unwrap().error = Some(Arc::new(error));
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
+fn run_inner(
+    args: Arc<Args>,
+    state: Arc<Mutex<InductionHeaterState>>,
+) -> Result<(), anyhow::Error> {
     let mut port = serialport::new(&args.serial_port, args.baud)
         .timeout(Duration::from_secs(1))
-        .open()?;
+        .open()
+        .map_err(|e| anyhow::anyhow!("Error opening serial port at {}: {e}", &args.serial_port))?;
 
-    let mut first_loop = true;
+    let mut loop_iteration: u64 = 0;
 
     loop {
         // Read the data
@@ -57,14 +82,27 @@ pub fn run(args: Arc<Args>, state: Arc<Mutex<InductionHeaterState>>) -> Result<(
         // Apply the data
         let mut state_guard = state.lock().unwrap();
 
+        state_guard.error = None;
         state_guard.led_green = led_g;
         state_guard.led_red = led_r;
         state_guard.enabled = enabled;
         state_guard.coil_drive_frequency = coil_drive_frequency;
+        state_guard.coil_drive_frequencies.push((loop_iteration as f64, coil_drive_frequency as f64));
+        if state_guard.coil_drive_frequencies.len() > 500 {
+            state_guard.coil_drive_frequencies.remove(0);
+        }
         state_guard.coil_voltage_max = coil_voltage_max;
+        state_guard.coil_voltage_maxs.push((loop_iteration as f64, coil_voltage_max as f64));
+        if state_guard.coil_voltage_maxs.len() > 500 {
+            state_guard.coil_voltage_maxs.remove(0);
+        }
         state_guard.fan_rpm = fan_rpm;
+        state_guard.fan_rpms.push((loop_iteration as f64, fan_rpm as f64));
+        if state_guard.fan_rpms.len() > 500 {
+            state_guard.fan_rpms.remove(0);
+        }
 
-        if first_loop {
+        if loop_iteration == 0 {
             state_guard.target_enabled = enabled;
         }
 
@@ -76,7 +114,7 @@ pub fn run(args: Arc<Args>, state: Arc<Mutex<InductionHeaterState>>) -> Result<(
             write_coils(&mut port, args.unit_id, 0, &[current_state.target_enabled])?;
         }
 
-        first_loop = false;
+        loop_iteration += 1;
         std::thread::sleep(Duration::from_millis(20));
     }
 }

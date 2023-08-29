@@ -27,7 +27,7 @@ pub async fn coil_driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
 
     modbus::COIL_POWER_ENABLE.write(false).await;
     modbus::COIL_DRIVE_FREQUENCY.write(40_000).await;
-    modbus::COIL_POWER_DUTYCYCLE.write(1.0).await;
+    modbus::COIL_POWER_DUTYCYCLE.write(0.5).await;
 
     loop {
         let result = select3(

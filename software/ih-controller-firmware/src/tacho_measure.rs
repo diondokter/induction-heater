@@ -12,6 +12,8 @@ use crate::modbus;
 
 #[embassy_executor::task]
 pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
+    core::future::pending::<()>().await;
+
     defmt::trace!("Initializing tachometer measure");
 
     // Set the pin to the right AF mode
