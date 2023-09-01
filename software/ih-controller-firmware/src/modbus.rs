@@ -1,27 +1,25 @@
+use core::cell::RefCell;
 use core::future::poll_fn;
 use core::marker::PhantomData;
 use core::ops::RangeInclusive;
 use core::task::{Context, Poll, Waker};
 
 use super::USART1;
+use critical_section::Mutex;
 use defmt::unwrap;
 use embassy_stm32::peripherals::{DMA1_CH1, DMA1_CH2};
 use embassy_stm32::usart::Uart;
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::mutex::Mutex;
 use futures::{Stream, StreamExt};
 use rmodbus::consts::*;
 use rmodbus::server::context::ModbusContext;
 use rmodbus::server::ModbusFrame;
 use rmodbus::ModbusFrameBuf;
 
-static MODBUS_CONTEXT: Mutex<ThreadModeRawMutex, ModbusContext<8, 8, 8, 8>> =
-    Mutex::<ThreadModeRawMutex, _>::new(ModbusContext::new());
+static MODBUS_CONTEXT: Mutex<RefCell<ModbusContext<8, 8, 8, 8>>> =
+    Mutex::new(RefCell::new(ModbusContext::new()));
 
-static MODBUS_LISTENER_REGISTRATIONS: Mutex<
-    ThreadModeRawMutex,
-    [Option<ModbusListenerRegistration>; 8],
-> = Mutex::new([REGINIT; 8]);
+static MODBUS_LISTENER_REGISTRATIONS: Mutex<RefCell<[Option<ModbusListenerRegistration>; 8]>> =
+    Mutex::new(RefCell::new([REGINIT; 8]));
 const REGINIT: Option<ModbusListenerRegistration> = None;
 
 #[embassy_executor::task]
@@ -55,10 +53,10 @@ pub(crate) async fn modbus_server(
         }
 
         if frame.processing_required {
-            let result = match frame.readonly {
-                true => frame.process_read(&*MODBUS_CONTEXT.lock().await),
-                false => frame.process_write(&mut *MODBUS_CONTEXT.lock().await),
-            };
+            let result = critical_section::with(|cs| match frame.readonly {
+                true => frame.process_read(&*MODBUS_CONTEXT.borrow_ref(cs)),
+                false => frame.process_write(&mut *MODBUS_CONTEXT.borrow_ref_mut(cs)),
+            });
             if let Err(e) = result {
                 defmt::error!("Could not process modbus frame: {}", e as u8);
                 continue;
@@ -97,14 +95,15 @@ pub(crate) async fn modbus_server(
 }
 
 async fn trigger_registrations(address_range: RangeInclusive<u16>, address_type: AddressType) {
-    MODBUS_LISTENER_REGISTRATIONS
-        .lock()
-        .await
-        .iter_mut()
-        .flatten()
-        .for_each(|registration| {
-            registration.on_context_written(address_range.clone(), address_type)
-        });
+    critical_section::with(|cs| {
+        MODBUS_LISTENER_REGISTRATIONS
+            .borrow_ref_mut(cs)
+            .iter_mut()
+            .flatten()
+            .for_each(|registration| {
+                registration.on_context_written(address_range.clone(), address_type)
+            });
+    });
 }
 
 struct ModbusListenerRegistration {
@@ -148,21 +147,24 @@ struct ModbusListener {
 impl ModbusListener {
     async fn new(address_range: RangeInclusive<u16>, address_type: AddressType) -> Self {
         let waker = poll_fn(|cx| Poll::Ready(cx.waker().clone())).await;
-        let mut registrations = MODBUS_LISTENER_REGISTRATIONS.lock().await;
 
-        let index = unwrap!(registrations
-            .iter()
-            .enumerate()
-            .find(|(_, r)| r.is_none())
-            .map(|(i, _)| i));
+        critical_section::with(|cs| {
+            let mut registrations = MODBUS_LISTENER_REGISTRATIONS.borrow_ref_mut(cs);
 
-        registrations[index] = Some(ModbusListenerRegistration::new(
-            address_range,
-            address_type,
-            Some(waker),
-        ));
+            let index = unwrap!(registrations
+                .iter()
+                .enumerate()
+                .find(|(_, r)| r.is_none())
+                .map(|(i, _)| i));
 
-        Self { index }
+            registrations[index] = Some(ModbusListenerRegistration::new(
+                address_range,
+                address_type,
+                Some(waker),
+            ));
+
+            Self { index }
+        })
     }
 
     fn associate_bool<A: BitAddress + 'static>(
@@ -201,24 +203,28 @@ impl futures::Stream for ModbusListener {
         self: core::pin::Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        // Should work because this is a private threadmode mutex
-        let mut registrations = unwrap!(MODBUS_LISTENER_REGISTRATIONS.try_lock());
+        critical_section::with(|cs| {
+            // Should work because this is a private threadmode mutex
+            let mut registrations = MODBUS_LISTENER_REGISTRATIONS.borrow_ref_mut(cs);
 
-        let waker = &mut unwrap!(registrations[self.index].as_mut()).waker;
+            let waker = &mut unwrap!(registrations[self.index].as_mut()).waker;
 
-        if waker.is_none() {
-            *waker = Some(cx.waker().clone());
-            Poll::Ready(Some(()))
-        } else {
-            Poll::Pending
-        }
+            if waker.is_none() {
+                *waker = Some(cx.waker().clone());
+                Poll::Ready(Some(()))
+            } else {
+                Poll::Pending
+            }
+        })
     }
 }
 
 impl Drop for ModbusListener {
     fn drop(&mut self) {
-        // Should work because this is a private threadmode mutex
-        unwrap!(MODBUS_LISTENER_REGISTRATIONS.try_lock())[self.index] = None;
+        critical_section::with(|cs| {
+            // Should work because this is a private threadmode mutex
+            MODBUS_LISTENER_REGISTRATIONS.borrow_ref_mut(cs)[self.index] = None;
+        });
     }
 }
 
@@ -235,10 +241,8 @@ fn ranges_overlap(x: RangeInclusive<u16>, y: RangeInclusive<u16>) -> bool {
 }
 
 // ----- Control (holdings) -----
-/// The amount of times per second the heater coil resonance frequency and voltage max is measured
-pub const COIL_MEASURE_FREQUENCY: ModbusRegister<u16, Holdings> = ModbusRegister::new(0);
 /// The dutycycle of the PWM that drives the coil. 0..=1
-pub const COIL_POWER_DUTYCYCLE: ModbusRegister<f32, Holdings> = ModbusRegister::new(1);
+pub const COIL_POWER_DUTYCYCLE: ModbusRegister<f32, Holdings> = ModbusRegister::new(0);
 // ----- Control (coils) -----
 pub const COIL_POWER_ENABLE: ModbusRegister<bool, Coils> = ModbusRegister::new(0);
 
@@ -266,35 +270,31 @@ impl<T, A> ModbusRegister<T, A> {
 
 impl<A: BitAddress> ModbusRegister<bool, A> {
     pub async fn read(&self) -> bool {
-        match A::TYPE {
-            AddressType::Coil => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_coil(self.address_start)
-                .map_err(|e| e as u8)),
-            AddressType::Discrete => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_discrete(self.address_start)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        }
+        critical_section::with(|cs| {
+            let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Coil => unwrap!(ctx.get_coil(self.address_start).map_err(|e| e as u8)),
+                AddressType::Discrete => {
+                    unwrap!(ctx.get_discrete(self.address_start).map_err(|e| e as u8))
+                }
+                _ => defmt::unreachable!(),
+            }
+        })
     }
 
     pub async fn write(&self, value: bool) {
-        match A::TYPE {
-            AddressType::Coil => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_coil(self.address_start, value)
-                .map_err(|e| e as u8)),
-            AddressType::Discrete => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_discrete(self.address_start, value)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        };
+        critical_section::with(|cs| {
+            let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Coil => {
+                    unwrap!(ctx.set_coil(self.address_start, value).map_err(|e| e as u8))
+                }
+                AddressType::Discrete => unwrap!(ctx
+                    .set_discrete(self.address_start, value)
+                    .map_err(|e| e as u8)),
+                _ => defmt::unreachable!(),
+            }
+        });
 
         trigger_registrations(self.address_start..=self.address_start, A::TYPE).await;
     }
@@ -308,35 +308,33 @@ impl<A: BitAddress> ModbusRegister<bool, A> {
 
 impl<A: RegisterAddress> ModbusRegister<f32, A> {
     pub async fn read(&self) -> f32 {
-        match A::TYPE {
-            AddressType::Input => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_inputs_as_f32(self.address_start)
-                .map_err(|e| e as u8)),
-            AddressType::Holding => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_holdings_as_f32(self.address_start)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        }
+        critical_section::with(|cs| {
+            let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Input => unwrap!(ctx
+                    .get_inputs_as_f32(self.address_start)
+                    .map_err(|e| e as u8)),
+                AddressType::Holding => unwrap!(ctx
+                    .get_holdings_as_f32(self.address_start)
+                    .map_err(|e| e as u8)),
+                _ => defmt::unreachable!(),
+            }
+        })
     }
 
     pub async fn write(&self, value: f32) {
-        match A::TYPE {
-            AddressType::Input => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_inputs_from_f32(self.address_start, value)
-                .map_err(|e| e as u8)),
-            AddressType::Holding => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_holdings_from_f32(self.address_start, value)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        };
+        critical_section::with(|cs| {
+            let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Input => unwrap!(ctx
+                    .set_inputs_from_f32(self.address_start, value)
+                    .map_err(|e| e as u8)),
+                AddressType::Holding => unwrap!(ctx
+                    .set_holdings_from_f32(self.address_start, value)
+                    .map_err(|e| e as u8)),
+                _ => defmt::unreachable!(),
+            }
+        });
 
         trigger_registrations(self.address_start..=self.address_start + 1, A::TYPE).await;
     }
@@ -350,35 +348,33 @@ impl<A: RegisterAddress> ModbusRegister<f32, A> {
 
 impl<A: RegisterAddress> ModbusRegister<u32, A> {
     pub async fn read(&self) -> u32 {
-        match A::TYPE {
-            AddressType::Input => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_inputs_as_u32(self.address_start)
-                .map_err(|e| e as u8)),
-            AddressType::Holding => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_holdings_as_u32(self.address_start)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        }
+        critical_section::with(|cs| {
+            let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Input => unwrap!(ctx
+                    .get_inputs_as_u32(self.address_start)
+                    .map_err(|e| e as u8)),
+                AddressType::Holding => unwrap!(ctx
+                    .get_holdings_as_u32(self.address_start)
+                    .map_err(|e| e as u8)),
+                _ => defmt::unreachable!(),
+            }
+        })
     }
 
     pub async fn write(&self, value: u32) {
-        match A::TYPE {
-            AddressType::Input => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_inputs_from_u32(self.address_start, value)
-                .map_err(|e| e as u8)),
-            AddressType::Holding => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_holdings_from_u32(self.address_start, value)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        };
+        critical_section::with(|cs| {
+            let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Input => unwrap!(ctx
+                    .set_inputs_from_u32(self.address_start, value)
+                    .map_err(|e| e as u8)),
+                AddressType::Holding => unwrap!(ctx
+                    .set_holdings_from_u32(self.address_start, value)
+                    .map_err(|e| e as u8)),
+                _ => defmt::unreachable!(),
+            }
+        });
 
         trigger_registrations(self.address_start..=self.address_start + 1, A::TYPE).await;
     }
@@ -392,35 +388,33 @@ impl<A: RegisterAddress> ModbusRegister<u32, A> {
 
 impl<A: RegisterAddress> ModbusRegister<u16, A> {
     pub async fn read(&self) -> u16 {
-        match A::TYPE {
-            AddressType::Input => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_input(self.address_start)
-                .map_err(|e| e as u8)),
-            AddressType::Holding => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .get_holding(self.address_start)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        }
+        critical_section::with(|cs| {
+            let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Input => {
+                    unwrap!(ctx.get_input(self.address_start).map_err(|e| e as u8))
+                }
+                AddressType::Holding => {
+                    unwrap!(ctx.get_holding(self.address_start).map_err(|e| e as u8))
+                }
+                _ => defmt::unreachable!(),
+            }
+        })
     }
 
     pub async fn write(&self, value: u16) {
-        match A::TYPE {
-            AddressType::Input => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_input(self.address_start, value)
-                .map_err(|e| e as u8)),
-            AddressType::Holding => unwrap!(MODBUS_CONTEXT
-                .lock()
-                .await
-                .set_holding(self.address_start, value)
-                .map_err(|e| e as u8)),
-            _ => defmt::unreachable!(),
-        };
+        critical_section::with(|cs| {
+            let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
+            match A::TYPE {
+                AddressType::Input => unwrap!(ctx
+                    .set_input(self.address_start, value)
+                    .map_err(|e| e as u8)),
+                AddressType::Holding => unwrap!(ctx
+                    .set_holding(self.address_start, value)
+                    .map_err(|e| e as u8)),
+                _ => defmt::unreachable!(),
+            }
+        });
 
         trigger_registrations(self.address_start..=self.address_start, A::TYPE).await;
     }

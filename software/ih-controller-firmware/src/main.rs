@@ -2,10 +2,11 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use embassy_executor::Spawner;
+use embassy_executor::{InterruptExecutor, SendSpawner, Spawner};
 use embassy_stm32::{
     bind_interrupts,
     gpio::{Level, OutputOpenDrain, OutputType, Pull, Speed},
+    interrupt::{self, InterruptExt, Priority},
     peripherals::{self, USART1},
     rcc::{AHBPrescaler, APBPrescaler, ClockSrc, PllConfig},
     time::khz,
@@ -15,7 +16,6 @@ use embassy_stm32::{
     },
     usart::{self, Uart},
 };
-
 use {defmt_rtt as _, panic_probe as _};
 
 mod coil_driver;
@@ -28,12 +28,22 @@ bind_interrupts!(struct Irqs {
     USART1 => usart::InterruptHandler<peripherals::USART1>;
 });
 
-#[embassy_executor::main]
-async fn main(spawner: Spawner) {
-    run(spawner).await;
+static EXECUTOR_HIGH: InterruptExecutor = InterruptExecutor::new();
+
+#[cortex_m_rt::interrupt]
+unsafe fn RTC_TAMP() {
+    EXECUTOR_HIGH.on_interrupt()
 }
 
-async fn run(spawner: Spawner) {
+#[embassy_executor::main]
+async fn main(thread_mode_spawner: Spawner) {
+    interrupt::RTC_TAMP.set_priority(Priority::P15);
+    let interrupt_spawner = EXECUTOR_HIGH.start(interrupt::RTC_TAMP);
+
+    run(thread_mode_spawner, interrupt_spawner).await;
+}
+
+async fn run(thread_mode_spawner: Spawner, interrupt_spawner: SendSpawner) {
     let mut stm_config = embassy_stm32::Config::default();
     stm_config.rcc.mux = ClockSrc::PLL(PllConfig::default()); // Make the core run at 64 Mhz
     stm_config.rcc.ahb_pre = AHBPrescaler::NotDivided; // We want everything to run at 64 Mhz
@@ -73,13 +83,13 @@ async fn run(spawner: Spawner) {
     let fan_tacho_timer = p.TIM17;
     let fan_tacho_pin = p.PB9; // CH1
 
-    spawner.must_spawn(leds::leds(led_g, led_r));
-    spawner.must_spawn(modbus::modbus_server(1, rs485));
-    spawner.must_spawn(coil_driver::coil_driver(driver_pwm));
-    // spawner.must_spawn(coil_measure::coil_measure(
-    //     measure_adc,
-    //     measure_pin,
-    //     measure_dma,
-    // ));
-    spawner.must_spawn(tacho_measure::tacho_measure(fan_tacho_timer, fan_tacho_pin));
+    thread_mode_spawner.must_spawn(leds::leds(led_g, led_r));
+    interrupt_spawner.must_spawn(modbus::modbus_server(1, rs485));
+    interrupt_spawner.must_spawn(coil_driver::coil_driver(driver_pwm));
+    thread_mode_spawner.must_spawn(coil_measure::coil_measure(
+        measure_adc,
+        measure_pin,
+        measure_dma,
+    ));
+    thread_mode_spawner.must_spawn(tacho_measure::tacho_measure(fan_tacho_timer, fan_tacho_pin));
 }

@@ -1,13 +1,13 @@
 use std::{
     sync::{Arc, Mutex},
-    time::Duration
+    time::Duration,
 };
 
 use getset::{CopyGetters, Getters, Setters};
 use rmodbus::{client::ModbusRequest, guess_response_frame_len, ModbusProto};
 use serialport::SerialPort;
 
-use crate::{Args, tui::GraphSelection};
+use crate::{tui::GraphSelection, Args};
 
 #[derive(Debug, Default, Clone, CopyGetters, Setters, Getters)]
 pub struct InductionHeaterState {
@@ -60,11 +60,17 @@ fn run_inner(
     state: Arc<Mutex<InductionHeaterState>>,
 ) -> Result<(), anyhow::Error> {
     let mut port = serialport::new(&args.serial_port, args.baud)
-        .timeout(Duration::from_secs(1))
+        .timeout(Duration::from_millis(100))
         .open()
         .map_err(|e| anyhow::anyhow!("Error opening serial port at {}: {e}", &args.serial_port))?;
 
-    let mut loop_iteration: u64 = 0;
+    let mut loop_iteration = state
+        .lock()
+        .unwrap()
+        .coil_drive_frequencies
+        .last()
+        .map(|(loop_iter, _)| *loop_iter as u64)
+        .unwrap_or_default();
 
     loop {
         // Read the data
@@ -87,17 +93,23 @@ fn run_inner(
         state_guard.led_red = led_r;
         state_guard.enabled = enabled;
         state_guard.coil_drive_frequency = coil_drive_frequency;
-        state_guard.coil_drive_frequencies.push((loop_iteration as f64, coil_drive_frequency as f64));
+        state_guard
+            .coil_drive_frequencies
+            .push((loop_iteration as f64, coil_drive_frequency as f64));
         if state_guard.coil_drive_frequencies.len() > 500 {
             state_guard.coil_drive_frequencies.remove(0);
         }
         state_guard.coil_voltage_max = coil_voltage_max;
-        state_guard.coil_voltage_maxs.push((loop_iteration as f64, coil_voltage_max as f64));
+        state_guard
+            .coil_voltage_maxs
+            .push((loop_iteration as f64, coil_voltage_max as f64));
         if state_guard.coil_voltage_maxs.len() > 500 {
             state_guard.coil_voltage_maxs.remove(0);
         }
         state_guard.fan_rpm = fan_rpm;
-        state_guard.fan_rpms.push((loop_iteration as f64, fan_rpm as f64));
+        state_guard
+            .fan_rpms
+            .push((loop_iteration as f64, fan_rpm as f64));
         if state_guard.fan_rpms.len() > 500 {
             state_guard.fan_rpms.remove(0);
         }

@@ -48,7 +48,7 @@ pub async fn coil_driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
                 modbus::LED_GREEN.write(enable).await;
             }
             Either3::Second(Some(frequency)) => {
-                driver_pwm.set_freq(Hertz(frequency));
+                driver_pwm.set_freq(Hertz(frequency.max(1000)));
                 let dutycycle = modbus::COIL_POWER_DUTYCYCLE.read().await;
                 driver_pwm.set_duty(
                     Channel::Ch2,

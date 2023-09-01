@@ -5,7 +5,7 @@ runner = "probe-rs run --chip STM32G030F6Px"
 target = "thumbv6m-none-eabi"
 
 [env]
-DEFMT_LOG = "trace"
+DEFMT_LOG = "debug"
 
 [unstable]
 build-std = ["panic_abort", "core"]

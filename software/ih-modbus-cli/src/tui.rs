@@ -329,15 +329,14 @@ fn render_graph(
             .map(|(hor, _)| hor)
             .min_by(f64::total_cmp)
             .unwrap_or_default()
-            .round();
+            .floor();
         let data_horizontal_max = data
             .iter()
             .copied()
             .map(|(hor, _)| hor)
             .max_by(f64::total_cmp)
             .unwrap_or_default()
-            .round()
-            + 1.0;
+            .ceil();
 
         let data_vertical_min = data
             .iter()
@@ -345,16 +344,14 @@ fn render_graph(
             .map(|(_, vert)| vert)
             .min_by(f64::total_cmp)
             .unwrap_or_default()
-            .round()
-            - 1.0;
+            .floor();
         let data_vertical_max = data
             .iter()
             .copied()
             .map(|(_, vert)| vert)
             .max_by(f64::total_cmp)
             .unwrap_or_default()
-            .round()
-            + 1.0;
+            .ceil();
 
         let locale = SystemLocale::default().unwrap();
 

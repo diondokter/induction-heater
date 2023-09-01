@@ -16,8 +16,6 @@ pub async fn coil_measure(
     // What we need from the ADC is not implemented in embassy, so we'll have to control the registers ourselves.
     // We take the peripherals nonetheless so we know we've got exclusive access
 
-    modbus::COIL_MEASURE_FREQUENCY.write(10).await;
-
     let mut adc_sample_buffer = [0u16; NUM_SAMPLES];
     let mut coil_sample_buffer = [CoilSample::EMPTY; NUM_SAMPLES];
 
@@ -25,11 +23,10 @@ pub async fn coil_measure(
     let adc = pac::ADC1;
     init_adc(&adc).await;
 
+    let mut ticker = embassy_time::Ticker::every(Duration::from_millis(200));
+
     loop {
-        embassy_time::Timer::after(Duration::from_hz(
-            modbus::COIL_MEASURE_FREQUENCY.read().await.clamp(1, 1000) as u64,
-        ))
-        .await;
+        ticker.next().await;
 
         if !modbus::COIL_POWER_ENABLE.read().await {
             continue;
@@ -57,9 +54,19 @@ pub async fn coil_measure(
         let mut min_freq = 1.0 / ((peak_sample.time + ADC_SAMPLE_PERIOD) * 4.0);
 
         const NUM_FREQS_TEST: u32 = 11;
-        const MAX_FREQ_ERROR: f32 = 5.0;
+        const MAX_FREQ_ERROR: f32 = 10.0;
+
+        let mut i = 0;
 
         while (max_freq - min_freq) > MAX_FREQ_ERROR {
+            if i > 20 {
+                defmt::warn!(
+                    "Max iteration reached and freq error is {}",
+                    (max_freq - min_freq)
+                );
+                break;
+            }
+
             (min_freq, max_freq) = find_best_fit(
                 &coil_sample_buffer,
                 peak_sample,
@@ -68,15 +75,14 @@ pub async fn coil_measure(
                 NUM_FREQS_TEST,
             );
 
-            // Give other tasks a chance to run too
-            embassy_futures::yield_now().await;
+            i += 1;
         }
 
         let final_frequency = (min_freq + max_freq) / 2.0;
-        defmt::info!("Final freq: {}", final_frequency);
+        defmt::info!("Final freq: {}", final_frequency,);
 
         modbus::COIL_DRIVE_FREQUENCY
-            .write(final_frequency as u32)
+            .write(final_frequency.max(0.0) as u32)
             .await;
         modbus::COIL_VOLTAGE_MAX.write(peak_sample.voltage).await;
     }
@@ -143,7 +149,7 @@ fn find_best_fit(
     max_freq: f32,
     num_freqs_test: u32,
 ) -> (f32, f32) {
-    defmt::info!("Frequency range {{ max: {}, min: {} }}", max_freq, min_freq);
+    defmt::trace!("Frequency range {{ max: {}, min: {} }}", max_freq, min_freq);
 
     let freq_step = (max_freq - min_freq) / (num_freqs_test - 1) as f32;
 
@@ -154,7 +160,7 @@ fn find_best_fit(
 
     for freq in test_frequencies {
         let fit = calculate_fit_error(samples, freq, peak_sample);
-        defmt::info!("Freq: {}, fit: {}", freq, fit);
+        defmt::trace!("Freq: {}, fit: {}", freq, fit);
 
         if fit < best_fit {
             best_fit = fit;
@@ -164,7 +170,7 @@ fn find_best_fit(
         }
     }
 
-    defmt::info!("Best frequency: {} (@ fit {})", best_frequency, best_fit);
+    defmt::trace!("Best frequency: {} (@ fit {})", best_frequency, best_fit);
 
     (
         best_frequency - freq_step * core::f32::consts::FRAC_1_SQRT_2,
