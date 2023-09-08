@@ -47,14 +47,20 @@ pub async fn coil_measure(
         // The voltage follows a sine wave and we want to fit one to the samples.
         // First we find the highest sample to get a good guess as to what the max voltage is.
         // This should be pretty accurate since the peak of the sine wave is pretty flat.
-        let peak_sample = calculate_peak_sample(&coil_sample_buffer);
+        let (peak_sample, peak_sample_index) = calculate_peak_sample(&coil_sample_buffer);
+
+        defmt::info!("Peak is {}, index: {}", peak_sample, peak_sample_index);
+        defmt::info!("{}", coil_sample_buffer);
+
+        let sample_range = peak_sample_index * 2;
+        let coil_sample_buffer = &coil_sample_buffer[..sample_range];
 
         // Let's assume the estimate is at most one sample off
         let mut max_freq = 1.0 / ((peak_sample.time - ADC_SAMPLE_PERIOD) * 4.0);
         let mut min_freq = 1.0 / ((peak_sample.time + ADC_SAMPLE_PERIOD) * 4.0);
 
         const NUM_FREQS_TEST: u32 = 11;
-        const MAX_FREQ_ERROR: f32 = 10.0;
+        const MAX_FREQ_ERROR: f32 = 20.0;
 
         let mut i = 0;
 
@@ -78,18 +84,22 @@ pub async fn coil_measure(
             i += 1;
         }
 
-        let final_frequency = (min_freq + max_freq) / 2.0;
+        let mut final_frequency = (min_freq + max_freq) / 2.0;
         defmt::info!("Final freq: {}", final_frequency,);
 
+        final_frequency = final_frequency.clamp(1_000.0, 100_000.0);
+
+        let current_frequency = modbus::COIL_DRIVE_FREQUENCY.read().await as f32;
+
         modbus::COIL_DRIVE_FREQUENCY
-            .write(final_frequency.max(0.0) as u32)
+            .write((current_frequency * 0.99 + final_frequency * 0.01) as u32)
             .await;
         modbus::COIL_VOLTAGE_MAX.write(peak_sample.voltage).await;
     }
 }
 
 /// The amount of samples to take
-const NUM_SAMPLES: usize = 64;
+const NUM_SAMPLES: usize = 128;
 
 /// The clock speed of the ADC peripheral
 const ADC_CLOCK: f32 = 64_000_000.0;
@@ -109,7 +119,7 @@ const ADC_CLOCKS_PER_SAMPLE: f32 = 1.5;
 const ADC_SAMPLE_TIME: f32 = ADC_CLOCK_TIME * ADC_CLOCKS_PER_SAMPLE;
 /// The time of a sample by index after the start of the trigger
 fn time_of_sample(index: usize) -> f32 {
-    ADC_TRIGGER_DELAY_TIME + index as f32 * ADC_SAMPLE_PERIOD + ADC_SAMPLE_TIME
+    ADC_TRIGGER_DELAY_TIME + 0.0000025 + index as f32 * ADC_SAMPLE_PERIOD + ADC_SAMPLE_TIME
 }
 /// The amount of bits the ADC samples with
 const ADC_SAMPLE_BITS: u16 = 12;
@@ -127,23 +137,27 @@ fn voltage_of_sample(sample: u16) -> f32 {
     adc_voltage * (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2) / VOLTAGE_DIVIDER_R2
 }
 
-fn calculate_peak_sample(samples: &[CoilSample; NUM_SAMPLES]) -> &CoilSample {
+fn calculate_peak_sample(samples: &[CoilSample; NUM_SAMPLES]) -> (&CoilSample, usize) {
     samples
         .iter()
-        .fold((&CoilSample::EMPTY, false), |(acc_sample, done), sample| {
-            if sample.voltage > acc_sample.voltage && !done {
-                (sample, done)
-            } else if sample.voltage < acc_sample.voltage * 0.9 && !done {
-                (acc_sample, true)
-            } else {
-                (acc_sample, done)
-            }
-        })
+        .enumerate()
+        .fold(
+            ((&CoilSample::EMPTY, 0), false),
+            |((acc_sample, acc_sample_index), done), (sample_index, sample)| {
+                if sample.voltage > acc_sample.voltage && !done {
+                    ((sample, sample_index), done)
+                } else if sample.voltage < acc_sample.voltage * 0.1 && !done {
+                    ((acc_sample, acc_sample_index), true)
+                } else {
+                    ((acc_sample, acc_sample_index), done)
+                }
+            },
+        )
         .0
 }
 
 fn find_best_fit(
-    samples: &[CoilSample; NUM_SAMPLES],
+    samples: &[CoilSample],
     peak_sample: &CoilSample,
     min_freq: f32,
     max_freq: f32,
@@ -178,11 +192,7 @@ fn find_best_fit(
     )
 }
 
-fn calculate_fit_error(
-    samples: &[CoilSample; NUM_SAMPLES],
-    frequency: f32,
-    peak_sample: &CoilSample,
-) -> f32 {
+fn calculate_fit_error(samples: &[CoilSample], frequency: f32, peak_sample: &CoilSample) -> f32 {
     use micromath::F32Ext;
 
     samples
@@ -244,7 +254,7 @@ async fn init_adc(adc: &embassy_stm32::pac::adc::Adc) {
         // We trigger the ADC from the TIM1_TRGO2 event
         w.set_extsel(0b000);
         // We trigger the ADC on the rising edge (TODO this might need to be falling edge 0b10)
-        w.set_exten(0b01);
+        w.set_exten(0b10);
     });
     // We need to wait
     embassy_time::Timer::after(Duration::from_micros(20)).await;
