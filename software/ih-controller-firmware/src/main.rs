@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+#![feature(generic_arg_infer)]
 
 use embassy_executor::{InterruptExecutor, SendSpawner, Spawner};
 use embassy_stm32::{

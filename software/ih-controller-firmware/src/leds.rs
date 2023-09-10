@@ -16,8 +16,8 @@ pub async fn leds(
     let mut led_g_listener = pin!(modbus::LED_GREEN.get_listener().await);
     let mut led_r_listener = pin!(modbus::LED_RED.get_listener().await);
 
-    modbus::LED_GREEN.write(false).await;
-    modbus::LED_RED.write(false).await;
+    modbus::LED_GREEN.write(false);
+    modbus::LED_RED.write(false);
 
     loop {
         let result = select(led_g_listener.next(), led_r_listener.next()).await;

@@ -28,7 +28,7 @@ pub async fn coil_measure(
     loop {
         ticker.next().await;
 
-        if !modbus::COIL_POWER_ENABLE.read().await {
+        if !modbus::COIL_POWER_ENABLE.read() {
             continue;
         }
 
@@ -50,7 +50,7 @@ pub async fn coil_measure(
         let (peak_sample, peak_sample_index) = calculate_peak_sample(&coil_sample_buffer);
 
         defmt::info!("Peak is {}, index: {}", peak_sample, peak_sample_index);
-        defmt::info!("{}", coil_sample_buffer);
+        // defmt::info!("{}", coil_sample_buffer);
 
         let sample_range = peak_sample_index * 2;
         let coil_sample_buffer = &coil_sample_buffer[..sample_range];
@@ -89,12 +89,11 @@ pub async fn coil_measure(
 
         final_frequency = final_frequency.clamp(1_000.0, 100_000.0);
 
-        let current_frequency = modbus::COIL_DRIVE_FREQUENCY.read().await as f32;
+        let current_frequency = modbus::COIL_DRIVE_FREQUENCY.read() as f32;
 
         modbus::COIL_DRIVE_FREQUENCY
-            .write((current_frequency * 0.99 + final_frequency * 0.01) as u32)
-            .await;
-        modbus::COIL_VOLTAGE_MAX.write(peak_sample.voltage).await;
+            .write((current_frequency * 0.999 + final_frequency * 0.001) as u32);
+        modbus::COIL_VOLTAGE_MAX.write(peak_sample.voltage);
     }
 }
 

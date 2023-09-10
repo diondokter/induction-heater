@@ -25,9 +25,9 @@ pub async fn coil_driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
 
     driver_pwm.set_dead_time(0);
 
-    modbus::COIL_POWER_ENABLE.write(false).await;
-    modbus::COIL_DRIVE_FREQUENCY.write(29_000).await;
-    modbus::COIL_POWER_DUTYCYCLE.write(0.5).await;
+    modbus::COIL_POWER_ENABLE.write(false);
+    modbus::COIL_DRIVE_FREQUENCY.write(38_000);
+    modbus::COIL_POWER_DUTYCYCLE.write(0.5);
 
     loop {
         let result = select3(
@@ -45,11 +45,11 @@ pub async fn coil_driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
                     driver_pwm.disable(Channel::Ch2);
                 }
 
-                modbus::LED_GREEN.write(enable).await;
+                modbus::LED_GREEN.write(enable);
             }
             Either3::Second(Some(frequency)) => {
                 driver_pwm.set_freq(Hertz(frequency.max(1000)));
-                let dutycycle = modbus::COIL_POWER_DUTYCYCLE.read().await;
+                let dutycycle = modbus::COIL_POWER_DUTYCYCLE.read();
                 driver_pwm.set_duty(
                     Channel::Ch2,
                     (driver_pwm.get_max_duty() as f32 * dutycycle.clamp(0.0, 1.0)) as u16,

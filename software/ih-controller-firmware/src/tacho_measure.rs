@@ -87,7 +87,7 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
                 let tacho_frequency = 1.0 / time_diff / 2.0;
                 let tacho_rpm = tacho_frequency * 60.0;
 
-                modbus::FAN_RPM.write(tacho_rpm as u16).await;
+                modbus::FAN_RPM.write(tacho_rpm as u16);
 
                 if tacho_rpm < 100.0 || tacho_rpm >= 10_000.0 {
                     error |= true;
@@ -101,8 +101,8 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
             error |= true;
         }
 
-        if modbus::LED_RED.read().await != error {
-            modbus::LED_RED.write(error).await;
+        if modbus::LED_RED.read() != error {
+            modbus::LED_RED.write(error);
         }
     }
 }

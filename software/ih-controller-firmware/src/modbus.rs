@@ -10,10 +10,10 @@ use defmt::unwrap;
 use embassy_stm32::peripherals::{DMA1_CH1, DMA1_CH2};
 use embassy_stm32::usart::Uart;
 use futures::{Stream, StreamExt};
-use rmodbus::consts::*;
 use rmodbus::server::context::ModbusContext;
 use rmodbus::server::ModbusFrame;
 use rmodbus::ModbusFrameBuf;
+use rmodbus::{consts::*, ErrorKind};
 
 static MODBUS_CONTEXT: Mutex<RefCell<ModbusContext<8, 8, 8, 8>>> =
     Mutex::new(RefCell::new(ModbusContext::new()));
@@ -76,7 +76,7 @@ pub(crate) async fn modbus_server(
             };
 
             if !frame.readonly {
-                trigger_registrations(address_range, address_type).await;
+                trigger_registrations(address_range, address_type);
             }
         }
         if frame.response_required {
@@ -94,7 +94,7 @@ pub(crate) async fn modbus_server(
     }
 }
 
-async fn trigger_registrations(address_range: RangeInclusive<u16>, address_type: AddressType) {
+fn trigger_registrations(address_range: RangeInclusive<u16>, address_type: AddressType) {
     critical_section::with(|cs| {
         MODBUS_LISTENER_REGISTRATIONS
             .borrow_ref_mut(cs)
@@ -171,28 +171,14 @@ impl ModbusListener {
         self,
         register: &ModbusRegister<bool, A>,
     ) -> impl Stream<Item = bool> + '_ {
-        self.then(|_| async { register.read().await })
+        self.then(|_| async { register.read() })
     }
 
-    fn associate_u16<A: RegisterAddress + 'static>(
+    fn associate<V: RegisterValue, A: RegisterAddress + 'static>(
         self,
-        register: &ModbusRegister<u16, A>,
-    ) -> impl Stream<Item = u16> + '_ {
-        self.then(|_| async { register.read().await })
-    }
-
-    fn associate_u32<A: RegisterAddress + 'static>(
-        self,
-        register: &ModbusRegister<u32, A>,
-    ) -> impl Stream<Item = u32> + '_ {
-        self.then(|_| async { register.read().await })
-    }
-
-    fn associate_f32<A: RegisterAddress + 'static>(
-        self,
-        register: &ModbusRegister<f32, A>,
-    ) -> impl Stream<Item = f32> + '_ {
-        self.then(|_| async { register.read().await })
+        register: &ModbusRegister<V, A>,
+    ) -> impl Stream<Item = V> + '_ {
+        self.then(|_| async { register.read() })
     }
 }
 
@@ -269,7 +255,7 @@ impl<T, A> ModbusRegister<T, A> {
 }
 
 impl<A: BitAddress> ModbusRegister<bool, A> {
-    pub async fn read(&self) -> bool {
+    pub fn read(&self) -> bool {
         critical_section::with(|cs| {
             let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
             match A::TYPE {
@@ -282,7 +268,7 @@ impl<A: BitAddress> ModbusRegister<bool, A> {
         })
     }
 
-    pub async fn write(&self, value: bool) {
+    pub fn write(&self, value: bool) {
         critical_section::with(|cs| {
             let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
             match A::TYPE {
@@ -296,7 +282,7 @@ impl<A: BitAddress> ModbusRegister<bool, A> {
             }
         });
 
-        trigger_registrations(self.address_start..=self.address_start, A::TYPE).await;
+        trigger_registrations(self.address_start..=self.address_start, A::TYPE);
     }
 
     pub async fn get_listener(&self) -> impl Stream<Item = bool> + '_ {
@@ -306,123 +292,47 @@ impl<A: BitAddress> ModbusRegister<bool, A> {
     }
 }
 
-impl<A: RegisterAddress> ModbusRegister<f32, A> {
-    pub async fn read(&self) -> f32 {
-        critical_section::with(|cs| {
-            let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
-            match A::TYPE {
-                AddressType::Input => unwrap!(ctx
-                    .get_inputs_as_f32(self.address_start)
-                    .map_err(|e| e as u8)),
-                AddressType::Holding => unwrap!(ctx
-                    .get_holdings_as_f32(self.address_start)
-                    .map_err(|e| e as u8)),
-                _ => defmt::unreachable!(),
-            }
+impl<A: RegisterAddress, V: RegisterValue> ModbusRegister<V, A> {
+    pub fn read(&self) -> V {
+        critical_section::with(|cs| match A::TYPE {
+            AddressType::Input => unwrap!((V::read_input::<_, _, _, _>())(
+                &*MODBUS_CONTEXT.borrow_ref(cs),
+                self.address_start
+            )
+            .map_err(|e| e as u8)),
+            AddressType::Holding => unwrap!((V::read_holding::<_, _, _, _>())(
+                &*MODBUS_CONTEXT.borrow_ref(cs),
+                self.address_start
+            )
+            .map_err(|e| e as u8)),
+            _ => defmt::unreachable!(),
         })
     }
 
-    pub async fn write(&self, value: f32) {
-        critical_section::with(|cs| {
-            let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
-            match A::TYPE {
-                AddressType::Input => unwrap!(ctx
-                    .set_inputs_from_f32(self.address_start, value)
-                    .map_err(|e| e as u8)),
-                AddressType::Holding => unwrap!(ctx
-                    .set_holdings_from_f32(self.address_start, value)
-                    .map_err(|e| e as u8)),
-                _ => defmt::unreachable!(),
-            }
+    pub fn write(&self, value: V) {
+        critical_section::with(|cs| match A::TYPE {
+            AddressType::Input => unwrap!((V::write_input::<_, _, _, _>())(
+                &mut *MODBUS_CONTEXT.borrow_ref_mut(cs),
+                self.address_start,
+                value,
+            )
+            .map_err(|e| e as u8)),
+            AddressType::Holding => unwrap!((V::write_holding::<_, _, _, _>())(
+                &mut *MODBUS_CONTEXT.borrow_ref_mut(cs),
+                self.address_start,
+                value,
+            )
+            .map_err(|e| e as u8)),
+            _ => defmt::unreachable!(),
         });
 
-        trigger_registrations(self.address_start..=self.address_start + 1, A::TYPE).await;
+        trigger_registrations(self.address_start..=self.address_start, A::TYPE);
     }
 
-    pub async fn get_listener(&self) -> impl Stream<Item = f32> + '_ {
-        ModbusListener::new(self.address_start..=self.address_start + 1, A::TYPE)
-            .await
-            .associate_f32(self)
-    }
-}
-
-impl<A: RegisterAddress> ModbusRegister<u32, A> {
-    pub async fn read(&self) -> u32 {
-        critical_section::with(|cs| {
-            let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
-            match A::TYPE {
-                AddressType::Input => unwrap!(ctx
-                    .get_inputs_as_u32(self.address_start)
-                    .map_err(|e| e as u8)),
-                AddressType::Holding => unwrap!(ctx
-                    .get_holdings_as_u32(self.address_start)
-                    .map_err(|e| e as u8)),
-                _ => defmt::unreachable!(),
-            }
-        })
-    }
-
-    pub async fn write(&self, value: u32) {
-        critical_section::with(|cs| {
-            let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
-            match A::TYPE {
-                AddressType::Input => unwrap!(ctx
-                    .set_inputs_from_u32(self.address_start, value)
-                    .map_err(|e| e as u8)),
-                AddressType::Holding => unwrap!(ctx
-                    .set_holdings_from_u32(self.address_start, value)
-                    .map_err(|e| e as u8)),
-                _ => defmt::unreachable!(),
-            }
-        });
-
-        trigger_registrations(self.address_start..=self.address_start + 1, A::TYPE).await;
-    }
-
-    pub async fn get_listener(&self) -> impl Stream<Item = u32> + '_ {
-        ModbusListener::new(self.address_start..=self.address_start + 1, A::TYPE)
-            .await
-            .associate_u32(self)
-    }
-}
-
-impl<A: RegisterAddress> ModbusRegister<u16, A> {
-    pub async fn read(&self) -> u16 {
-        critical_section::with(|cs| {
-            let ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
-            match A::TYPE {
-                AddressType::Input => {
-                    unwrap!(ctx.get_input(self.address_start).map_err(|e| e as u8))
-                }
-                AddressType::Holding => {
-                    unwrap!(ctx.get_holding(self.address_start).map_err(|e| e as u8))
-                }
-                _ => defmt::unreachable!(),
-            }
-        })
-    }
-
-    pub async fn write(&self, value: u16) {
-        critical_section::with(|cs| {
-            let mut ctx = MODBUS_CONTEXT.borrow_ref_mut(cs);
-            match A::TYPE {
-                AddressType::Input => unwrap!(ctx
-                    .set_input(self.address_start, value)
-                    .map_err(|e| e as u8)),
-                AddressType::Holding => unwrap!(ctx
-                    .set_holding(self.address_start, value)
-                    .map_err(|e| e as u8)),
-                _ => defmt::unreachable!(),
-            }
-        });
-
-        trigger_registrations(self.address_start..=self.address_start, A::TYPE).await;
-    }
-
-    pub async fn get_listener(&self) -> impl Stream<Item = u16> + '_ {
+    pub async fn get_listener(&self) -> impl Stream<Item = V> + '_ {
         ModbusListener::new(self.address_start..=self.address_start, A::TYPE)
             .await
-            .associate_u16(self)
+            .associate(self)
     }
 }
 
@@ -456,3 +366,83 @@ impl Address for Holdings {
     const TYPE: AddressType = AddressType::Holding;
 }
 impl RegisterAddress for Holdings {}
+
+pub trait RegisterValue
+where
+    Self: Sized,
+{
+    fn write_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind>;
+    fn write_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind>;
+    fn read_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind>;
+    fn read_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind>;
+}
+
+impl RegisterValue for u16 {
+    fn write_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        ModbusContext::set_input
+    }
+
+    fn write_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        ModbusContext::set_holding
+    }
+
+    fn read_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        ModbusContext::get_input
+    }
+
+    fn read_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        ModbusContext::get_holding
+    }
+}
+
+impl RegisterValue for u32 {
+    fn write_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        ModbusContext::set_inputs_from_u32
+    }
+
+    fn write_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        ModbusContext::set_holdings_from_u32
+    }
+
+    fn read_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        ModbusContext::get_inputs_as_u32
+    }
+
+    fn read_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        ModbusContext::get_holdings_as_u32
+    }
+}
+
+impl RegisterValue for f32 {
+    fn write_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        ModbusContext::set_inputs_from_f32
+    }
+
+    fn write_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        ModbusContext::set_holdings_from_f32
+    }
+
+    fn read_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        ModbusContext::get_inputs_as_f32
+    }
+
+    fn read_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        ModbusContext::get_holdings_as_f32
+    }
+}
