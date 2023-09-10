@@ -299,12 +299,12 @@ impl<A: RegisterAddress, V: RegisterValue> ModbusRegister<V, A> {
     pub fn read(&self) -> V {
         critical_section::with(|cs| match A::TYPE {
             AddressType::Input => unwrap!((V::read_input::<_, _, _, _>())(
-                &*MODBUS_CONTEXT.borrow_ref(cs),
+                &MODBUS_CONTEXT.borrow_ref(cs),
                 self.address_start
             )
             .map_err(|e| e as u8)),
             AddressType::Holding => unwrap!((V::read_holding::<_, _, _, _>())(
-                &*MODBUS_CONTEXT.borrow_ref(cs),
+                &MODBUS_CONTEXT.borrow_ref(cs),
                 self.address_start
             )
             .map_err(|e| e as u8)),
@@ -316,13 +316,13 @@ impl<A: RegisterAddress, V: RegisterValue> ModbusRegister<V, A> {
     pub fn write(&self, value: V) {
         critical_section::with(|cs| match A::TYPE {
             AddressType::Input => unwrap!((V::write_input::<_, _, _, _>())(
-                &mut *MODBUS_CONTEXT.borrow_ref_mut(cs),
+                &mut MODBUS_CONTEXT.borrow_ref_mut(cs),
                 self.address_start,
                 value,
             )
             .map_err(|e| e as u8)),
             AddressType::Holding => unwrap!((V::write_holding::<_, _, _, _>())(
-                &mut *MODBUS_CONTEXT.borrow_ref_mut(cs),
+                &mut MODBUS_CONTEXT.borrow_ref_mut(cs),
                 self.address_start,
                 value,
             )

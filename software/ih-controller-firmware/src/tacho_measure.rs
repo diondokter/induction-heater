@@ -85,13 +85,11 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
                 let time_diff = diff as f32 * TIMER_PERIOD;
                 // Calculate and divide by 2 because we get two pulses per rotation
                 let tacho_frequency = 1.0 / time_diff / 2.0;
-                let tacho_rpm = tacho_frequency * 60.0;
+                let tacho_rpm = (tacho_frequency * 60.0) as u16;
 
-                modbus::FAN_RPM.write(tacho_rpm as u16);
+                modbus::FAN_RPM.write(tacho_rpm);
 
-                if tacho_rpm < 100.0 || tacho_rpm >= 10_000.0 {
-                    error |= true;
-                }
+                error |= !(100..10_000).contains(&tacho_rpm);
 
                 last_capture_time = Instant::now();
             }

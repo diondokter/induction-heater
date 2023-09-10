@@ -83,7 +83,7 @@ pub async fn coil_measure(
             }
 
             (min_freq, max_freq) = find_best_fit(
-                &coil_sample_buffer_peak,
+                coil_sample_buffer_peak,
                 peak_sample,
                 min_freq,
                 max_freq,

@@ -1,4 +1,8 @@
-use std::{error::Error, sync::{Arc, Mutex}, thread};
+use std::{
+    error::Error,
+    sync::{Arc, Mutex},
+    thread,
+};
 
 use clap::Parser;
 use ih_modbus::InductionHeaterState;

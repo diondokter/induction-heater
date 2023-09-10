@@ -55,8 +55,8 @@ fn run(
     loop {
         terminal.draw(|frame| render_app(frame, &state, &graph_selection))?;
         if event::poll(Duration::from_millis(16)).context("event poll failed")? {
-            match event::read().context("event read failed")? {
-                Event::Key(key) => match key.code {
+            if let Event::Key(key) = event::read().context("event read failed")? {
+                match key.code {
                     KeyCode::Char('q') => {
                         break;
                     }
@@ -70,8 +70,7 @@ fn run(
                         graph_selection.toggle(BitFlags::from_bits_truncate(1 << (num - 1)));
                     }
                     _ => {}
-                },
-                _ => (),
+                }
             }
         }
     }
@@ -133,7 +132,7 @@ fn render_table_state(
 ) {
     let rows = vec![
         Row::new::<Vec<Cell>>(vec![
-            make_table_selection(BitFlags::empty(), current_selection).into(),
+            make_table_selection(BitFlags::empty(), current_selection),
             Span::raw("Enabled:").into(),
             {
                 let enabled_text = if state.enabled() {
@@ -177,23 +176,22 @@ fn render_table_state(
             },
         ]),
         Row::new::<Vec<Cell>>(vec![
-            make_table_selection(GraphSelection::CoilDriveFrequency.into(), current_selection)
-                .into(),
+            make_table_selection(GraphSelection::CoilDriveFrequency.into(), current_selection),
             Span::raw("Coil drive frequency:").into(),
             Span::raw(format!("{}", state.coil_drive_frequency())).into(),
         ]),
         Row::new::<Vec<Cell>>(vec![
-            make_table_selection(GraphSelection::CoilVoltageMax.into(), current_selection).into(),
+            make_table_selection(GraphSelection::CoilVoltageMax.into(), current_selection),
             Span::raw("Coil voltage max:").into(),
             Span::raw(format!("{}", state.coil_voltage_max())).into(),
         ]),
         Row::new::<Vec<Cell>>(vec![
-            make_table_selection(GraphSelection::FanRpm.into(), current_selection).into(),
+            make_table_selection(GraphSelection::FanRpm.into(), current_selection),
             Span::raw("Fan RPM:").into(),
             Span::raw(format!("{}", state.fan_rpm())).into(),
         ]),
         Row::new::<Vec<Cell>>(vec![
-            make_table_selection(BitFlags::empty(), current_selection).into(),
+            make_table_selection(BitFlags::empty(), current_selection),
             Span::raw("LED green:").into(),
             if state.led_green() {
                 Span::styled(
@@ -213,7 +211,7 @@ fn render_table_state(
             .into(),
         ]),
         Row::new::<Vec<Cell>>(vec![
-            make_table_selection(BitFlags::empty(), current_selection).into(),
+            make_table_selection(BitFlags::empty(), current_selection),
             Span::raw("LED red:").into(),
             if state.led_red() {
                 Span::styled(
@@ -233,8 +231,7 @@ fn render_table_state(
             .into(),
         ]),
         Row::new::<Vec<Cell>>(vec![
-            make_table_selection(GraphSelection::AdcSamples.into(), current_selection)
-                .into(),
+            make_table_selection(GraphSelection::AdcSamples.into(), current_selection),
             Span::raw("ADC samples:").into(),
             Span::raw("_").into(),
         ]),
@@ -391,20 +388,22 @@ fn render_graph(
                     Axis::default()
                         .bounds([data_horizontal_min, data_horizontal_max])
                         .labels(vec![
-                            Span::raw(format!(
-                                "{}",
-                                (data_horizontal_min as i64).to_formatted_string(&locale)
-                            )),
-                            Span::raw(format!(
-                                "{}",
+                            Span::raw(
+                                (data_horizontal_min as i64)
+                                    .to_formatted_string(&locale)
+                                    .to_string(),
+                            ),
+                            Span::raw(
                                 (((data_horizontal_min + data_horizontal_max) / 2.0).round()
                                     as i64)
                                     .to_formatted_string(&locale)
-                            )),
-                            Span::raw(format!(
-                                "{}",
-                                (data_horizontal_max as i64).to_formatted_string(&locale)
-                            )),
+                                    .to_string(),
+                            ),
+                            Span::raw(
+                                (data_horizontal_max as i64)
+                                    .to_formatted_string(&locale)
+                                    .to_string(),
+                            ),
                         ]),
                 ),
             *area,
