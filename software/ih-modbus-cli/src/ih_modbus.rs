@@ -35,6 +35,8 @@ pub struct InductionHeaterState {
     enabled: bool,
     #[getset(get_copy = "pub", set = "pub")]
     target_enabled: bool,
+
+    adc_samples: Vec<(f64, f64)>,
 }
 
 impl InductionHeaterState {
@@ -43,6 +45,7 @@ impl InductionHeaterState {
             GraphSelection::CoilDriveFrequency => &self.coil_drive_frequencies,
             GraphSelection::CoilVoltageMax => &self.coil_voltage_maxs,
             GraphSelection::FanRpm => &self.fan_rpms,
+            GraphSelection::AdcSamples => &self.adc_samples,
         }
     }
 }
@@ -80,10 +83,16 @@ fn run_inner(
 
         let enabled = read_coils(&mut port, args.unit_id, 0, 1)?[0];
 
-        let inputs = read_inputs(&mut port, args.unit_id, 0, 5)?;
+        const NUM_SAMPLES: usize = 64;
+        let inputs = read_inputs(&mut port, args.unit_id, 0, 5 + NUM_SAMPLES as u16)?;
         let coil_drive_frequency = (inputs[0] as u32) << 16 | inputs[1] as u32;
         let coil_voltage_max = f32::from_bits((inputs[2] as u32) << 16 | inputs[3] as u32);
         let fan_rpm = inputs[4];
+        let adc_samples = inputs[5..][..NUM_SAMPLES]
+            .iter()
+            .enumerate()
+            .map(|(i, sample)| (i as f64, *sample as f64))
+            .collect();
 
         // Apply the data
         let mut state_guard = state.lock().unwrap();
@@ -113,6 +122,8 @@ fn run_inner(
         if state_guard.fan_rpms.len() > 500 {
             state_guard.fan_rpms.remove(0);
         }
+
+        state_guard.adc_samples = adc_samples;
 
         if loop_iteration == 0 {
             state_guard.target_enabled = enabled;

@@ -15,8 +15,25 @@ use rmodbus::server::ModbusFrame;
 use rmodbus::ModbusFrameBuf;
 use rmodbus::{consts::*, ErrorKind};
 
-static MODBUS_CONTEXT: Mutex<RefCell<ModbusContext<8, 8, 8, 8>>> =
-    Mutex::new(RefCell::new(ModbusContext::new()));
+// ----- Control (holdings) -----
+/// The dutycycle of the PWM that drives the coil. 0..=1
+pub const COIL_POWER_DUTYCYCLE: ModbusRegister<f32, Holdings> = ModbusRegister::new(0);
+// ----- Control (coils) -----
+pub const COIL_POWER_ENABLE: ModbusRegister<bool, Coils> = ModbusRegister::new(0);
+
+// ----- Report (inputs) -----
+pub const COIL_DRIVE_FREQUENCY: ModbusRegister<u32, Inputs> = ModbusRegister::new(0);
+pub const COIL_VOLTAGE_MAX: ModbusRegister<f32, Inputs> = ModbusRegister::new(2);
+pub const FAN_RPM: ModbusRegister<u16, Inputs> = ModbusRegister::new(4);
+pub const ADC_SAMPLES: ModbusRegister<[u16; crate::coil_measure::NUM_SAMPLES], Inputs> =
+    ModbusRegister::new(5);
+// ----- Report (discretes) -----
+pub const LED_GREEN: ModbusRegister<bool, Discretes> = ModbusRegister::new(0);
+pub const LED_RED: ModbusRegister<bool, Discretes> = ModbusRegister::new(1);
+
+static MODBUS_CONTEXT: Mutex<
+    RefCell<ModbusContext<1, 2, { 5 + crate::coil_measure::NUM_SAMPLES }, 2>>,
+> = Mutex::new(RefCell::new(ModbusContext::new()));
 
 static MODBUS_LISTENER_REGISTRATIONS: Mutex<RefCell<[Option<ModbusListenerRegistration>; 8]>> =
     Mutex::new(RefCell::new([REGINIT; 8]));
@@ -226,20 +243,6 @@ fn ranges_overlap(x: RangeInclusive<u16>, y: RangeInclusive<u16>) -> bool {
     x.start() <= y.end() && y.start() <= x.end()
 }
 
-// ----- Control (holdings) -----
-/// The dutycycle of the PWM that drives the coil. 0..=1
-pub const COIL_POWER_DUTYCYCLE: ModbusRegister<f32, Holdings> = ModbusRegister::new(0);
-// ----- Control (coils) -----
-pub const COIL_POWER_ENABLE: ModbusRegister<bool, Coils> = ModbusRegister::new(0);
-
-// ----- Report (inputs) -----
-pub const COIL_DRIVE_FREQUENCY: ModbusRegister<u32, Inputs> = ModbusRegister::new(0);
-pub const COIL_VOLTAGE_MAX: ModbusRegister<f32, Inputs> = ModbusRegister::new(2);
-pub const FAN_RPM: ModbusRegister<u16, Inputs> = ModbusRegister::new(4);
-// ----- Report (discretes) -----
-pub const LED_GREEN: ModbusRegister<bool, Discretes> = ModbusRegister::new(0);
-pub const LED_RED: ModbusRegister<bool, Discretes> = ModbusRegister::new(1);
-
 pub struct ModbusRegister<T, A> {
     pub address_start: u16,
     _phantom: PhantomData<(T, A)>,
@@ -309,6 +312,7 @@ impl<A: RegisterAddress, V: RegisterValue> ModbusRegister<V, A> {
         })
     }
 
+    #[inline(never)]
     pub fn write(&self, value: V) {
         critical_section::with(|cs| match A::TYPE {
             AddressType::Input => unwrap!((V::write_input::<_, _, _, _>())(
@@ -444,5 +448,35 @@ impl RegisterValue for f32 {
     fn read_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
     ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
         ModbusContext::get_holdings_as_f32
+    }
+}
+
+impl<const N: usize> RegisterValue for [u16; N] {
+    fn write_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        |ctx, address_start, value| ctx.set_inputs_bulk(address_start, &value)
+    }
+
+    fn write_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&mut ModbusContext<C, D, I, H>, u16, Self) -> Result<(), ErrorKind> {
+        |ctx, address_start, value| ctx.set_holdings_bulk(address_start, &value)
+    }
+
+    fn read_input<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        |ctx, address_start| {
+            let mut value = heapless::Vec::<_, N>::new();
+            ctx.get_inputs_bulk(address_start, N as u16, &mut value)?;
+            value.into_array().map_err(|_| ErrorKind::IllegalDataValue)
+        }
+    }
+
+    fn read_holding<const C: usize, const D: usize, const I: usize, const H: usize>(
+    ) -> fn(&ModbusContext<C, D, I, H>, u16) -> Result<Self, ErrorKind> {
+        |ctx, address_start| {
+            let mut value = heapless::Vec::<_, N>::new();
+            ctx.get_holdings_bulk(address_start, N as u16, &mut value)?;
+            value.into_array().map_err(|_| ErrorKind::IllegalDataValue)
+        }
     }
 }

@@ -232,6 +232,12 @@ fn render_table_state(
             }
             .into(),
         ]),
+        Row::new::<Vec<Cell>>(vec![
+            make_table_selection(GraphSelection::AdcSamples.into(), current_selection)
+                .into(),
+            Span::raw("ADC samples:").into(),
+            Span::raw("_").into(),
+        ]),
     ];
 
     let table = Table::new(rows)
@@ -413,4 +419,5 @@ pub enum GraphSelection {
     CoilDriveFrequency,
     CoilVoltageMax,
     FanRpm,
+    AdcSamples,
 }

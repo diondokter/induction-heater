@@ -14,7 +14,7 @@ pub struct Args {
     serial_port: String,
 
     /// Baud rate of the serial port
-    #[arg(short, long, default_value_t = 115200)]
+    #[arg(short, long, default_value_t = 921600)]
     baud: u32,
 
     /// The id of the induction heater device

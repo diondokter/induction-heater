@@ -26,7 +26,7 @@ pub async fn coil_driver(mut driver_pwm: ComplementaryPwm<'static, TIM1>) -> ! {
     driver_pwm.set_dead_time(0);
 
     modbus::COIL_POWER_ENABLE.write(false);
-    modbus::COIL_DRIVE_FREQUENCY.write(38_000);
+    modbus::COIL_DRIVE_FREQUENCY.write(40_000);
     modbus::COIL_POWER_DUTYCYCLE.write(0.5);
 
     loop {

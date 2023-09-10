@@ -63,7 +63,8 @@ async fn run(thread_mode_spawner: Spawner, interrupt_spawner: SendSpawner) {
     let led_g = OutputOpenDrain::new(p.PA2, Level::High, Speed::Low, Pull::None);
     let led_r = OutputOpenDrain::new(p.PA1, Level::High, Speed::Low, Pull::None);
 
-    let config = usart::Config::default();
+    let mut config = usart::Config::default();
+    config.baudrate = 921600;
     let rs485 = Uart::new_with_de(
         p.USART1, p.PB7, p.PA9, Irqs, p.PA12, p.DMA1_CH1, p.DMA1_CH2, config,
     );
