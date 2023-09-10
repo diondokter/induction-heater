@@ -26,7 +26,7 @@ pub async fn coil_measure(
     let adc = pac::ADC1;
     init_adc(&adc).await;
 
-    let mut ticker = embassy_time::Ticker::every(Duration::from_millis(200));
+    let mut ticker = embassy_time::Ticker::every(Duration::from_millis(50));
 
     loop {
         ticker.next().await;
@@ -56,7 +56,7 @@ pub async fn coil_measure(
 
         let peak_sample = &coil_sample_buffer[peak.top];
 
-        defmt::info!("Peak: {}, top sample: {}", peak, peak_sample);
+        // defmt::info!("Peak: {}, top sample: {}", peak, peak_sample);
         // defmt::info!("{}", coil_sample_buffer);
 
         // We only use the range of the peak
@@ -69,7 +69,7 @@ pub async fn coil_measure(
         let mut min_freq = 1.0 / ((peak_sample.time + ADC_SAMPLE_PERIOD) * 4.0);
 
         const NUM_FREQS_TEST: u32 = 11;
-        const MAX_FREQ_ERROR: f32 = 20.0;
+        const MAX_FREQ_ERROR: f32 = 10.0;
 
         let mut i = 0;
 
@@ -94,14 +94,14 @@ pub async fn coil_measure(
         }
 
         let mut final_frequency = (min_freq + max_freq) / 2.0;
-        defmt::info!("Final freq: {}", final_frequency);
+        // defmt::info!("Final freq: {}", final_frequency);
 
         final_frequency = final_frequency.clamp(1_000.0, 100_000.0);
 
         let current_frequency = modbus::COIL_DRIVE_FREQUENCY.read() as f32;
 
         modbus::COIL_DRIVE_FREQUENCY
-            .write((current_frequency * 0.95 + final_frequency * 0.05) as u32);
+            .write((current_frequency * 0.98 + final_frequency * 0.02) as u32);
         modbus::COIL_VOLTAGE_MAX.write(peak_sample.voltage);
     }
 }
