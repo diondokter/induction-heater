@@ -9,7 +9,7 @@ use serialport::SerialPort;
 
 use crate::{tui::GraphSelection, Args};
 
-#[derive(Debug, Default, Clone, CopyGetters, Setters, Getters)]
+#[derive(Debug, Clone, CopyGetters, Setters, Getters)]
 pub struct InductionHeaterState {
     #[getset(get = "pub")]
     error: Option<Arc<anyhow::Error>>,
@@ -37,6 +37,32 @@ pub struct InductionHeaterState {
     target_enabled: bool,
 
     adc_samples: Vec<(f64, f64)>,
+
+    #[getset(get_copy = "pub", set = "pub")]
+    coil_power_dutycycle: f32,
+    #[getset(get_copy = "pub", set = "pub")]
+    coil_power_dutycycle_updated: bool,
+}
+
+impl Default for InductionHeaterState {
+    fn default() -> Self {
+        Self {
+            error: Default::default(),
+            led_green: Default::default(),
+            led_red: Default::default(),
+            coil_drive_frequency: Default::default(),
+            coil_drive_frequencies: Default::default(),
+            coil_voltage_max: Default::default(),
+            coil_voltage_maxs: Default::default(),
+            fan_rpm: Default::default(),
+            fan_rpms: Default::default(),
+            enabled: Default::default(),
+            target_enabled: Default::default(),
+            adc_samples: Default::default(),
+            coil_power_dutycycle: 0.5,
+            coil_power_dutycycle_updated: Default::default(),
+        }
+    }
 }
 
 impl InductionHeaterState {
@@ -131,10 +157,23 @@ fn run_inner(
 
         // Make the current state follow the targets
         let current_state = state_guard.clone();
+        state_guard.coil_power_dutycycle_updated = false;
         drop(state_guard);
 
         if current_state.target_enabled != enabled {
             write_coils(&mut port, args.unit_id, 0, &[current_state.target_enabled])?;
+        }
+
+        if current_state.coil_power_dutycycle_updated {
+            write_holdings(
+                &mut port,
+                args.unit_id,
+                0,
+                &[
+                    (current_state.coil_power_dutycycle.to_bits() >> 16 & 0xFFFF) as u16,
+                    (current_state.coil_power_dutycycle.to_bits() & 0xFFFF) as u16,
+                ],
+            )?;
         }
 
         loop_iteration += 1;
@@ -242,6 +281,39 @@ fn write_coils(
 
     let mut buf = Vec::new();
     request.generate_set_coils_bulk(reg, values, &mut buf)?;
+    port.write_all(&buf)?;
+
+    // read first 6 bytes of response frame
+    let mut buf = [0u8; 6];
+    port.read_exact(&mut buf)?;
+
+    let mut response = Vec::new();
+    response.extend_from_slice(&buf);
+
+    let len = guess_response_frame_len(&buf, ModbusProto::Rtu)?;
+    // read rest of response frame
+    if len > 6 {
+        let mut rest = vec![0u8; (len - 6) as usize];
+        port.read_exact(&mut rest)?;
+        response.extend(rest);
+    }
+
+    // check if frame has no Modbus error inside
+    request.parse_ok(&response)?;
+
+    Ok(())
+}
+
+fn write_holdings(
+    port: &mut Box<dyn SerialPort>,
+    unit_id: u8,
+    reg: u16,
+    values: &[u16],
+) -> Result<(), anyhow::Error> {
+    let mut request = ModbusRequest::new(unit_id, ModbusProto::Rtu);
+
+    let mut buf = Vec::new();
+    request.generate_set_holdings_bulk(reg, values, &mut buf)?;
     port.write_all(&buf)?;
 
     // read first 6 bytes of response frame

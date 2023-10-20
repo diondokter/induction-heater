@@ -69,6 +69,20 @@ fn run(
                         let num: u8 = c.to_digit(10).unwrap() as u8;
                         graph_selection.toggle(BitFlags::from_bits_truncate(1 << (num - 1)));
                     }
+                    KeyCode::Char('+') if key.kind != KeyEventKind::Release => {
+                        let mut state_guard = state.lock().unwrap();
+                        let new_dutycycle =
+                            (state_guard.coil_power_dutycycle() + 0.01).clamp(0.0, 1.0);
+                        state_guard.set_coil_power_dutycycle(new_dutycycle);
+                        state_guard.set_coil_power_dutycycle_updated(true);
+                    }
+                    KeyCode::Char('-') if key.kind != KeyEventKind::Release => {
+                        let mut state_guard = state.lock().unwrap();
+                        let new_dutycycle =
+                            (state_guard.coil_power_dutycycle() - 0.01).clamp(0.0, 1.0);
+                        state_guard.set_coil_power_dutycycle(new_dutycycle);
+                        state_guard.set_coil_power_dutycycle_updated(true);
+                    }
                     _ => {}
                 }
             }
@@ -183,7 +197,16 @@ fn render_table_state(
         Row::new::<Vec<Cell>>(vec![
             make_table_selection(GraphSelection::CoilVoltageMax.into(), current_selection),
             Span::raw("Coil voltage max:").into(),
-            Span::raw(format!("{}", state.coil_voltage_max())).into(),
+            Span::raw(format!("{:.1}", state.coil_voltage_max())).into(),
+        ]),
+        Row::new::<Vec<Cell>>(vec![
+            make_table_selection(BitFlags::empty(), current_selection),
+            Span::raw("Coil power dutycyle:").into(),
+            Span::raw(format!(
+                "{:02}%",
+                (state.coil_power_dutycycle() * 100.0).round()
+            ))
+            .into(),
         ]),
         Row::new::<Vec<Cell>>(vec![
             make_table_selection(GraphSelection::FanRpm.into(), current_selection),
@@ -275,6 +298,10 @@ fn render_keybindings(frame: &mut ratatui::Frame<CrosstermBackend<Stdout>>, area
         Span::styled("E", Style::new().bold().underlined()),
         Span::raw("nable | "),
         Span::raw("<num> (to enable graphs) | "),
+        Span::styled("+", Style::new().bold().underlined()),
+        Span::raw("/"),
+        Span::styled("-", Style::new().bold().underlined()),
+        Span::raw(" (for dutycycle) | "),
     ]))
     .block(
         Block::default()
