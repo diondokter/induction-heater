@@ -24,7 +24,7 @@ pub async fn tacho_measure(_timer: TIM17, pin: PB9) -> ! {
     const TIMER_FREQ: f32 = CLOCK_FREQ / PRESCALER;
     const TIMER_PERIOD: f32 = 1.0 / TIMER_FREQ;
 
-    TIM17::enable();
+    TIM17::enable_and_reset();
 
     let regs = unsafe { &*stm32g0::stm32g030::TIM17::ptr() };
     // Be sure the clock runs at 64 MHz

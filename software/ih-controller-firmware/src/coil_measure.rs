@@ -31,9 +31,9 @@ pub async fn coil_measure(
     loop {
         ticker.next().await;
 
-        if !modbus::COIL_POWER_ENABLE.read() {
-            continue;
-        }
+        // if !modbus::COIL_POWER_ENABLE.read() {
+        //     continue;
+        // }
 
         start_adc(&adc, &mut measure_dma, &mut adc_sample_buffer).await;
 

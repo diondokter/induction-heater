@@ -3,6 +3,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(generic_arg_infer)]
 
+use defmt::unwrap;
 use embassy_executor::{InterruptExecutor, SendSpawner, Spawner};
 use embassy_stm32::{
     bind_interrupts,
@@ -12,8 +13,8 @@ use embassy_stm32::{
     rcc::{AHBPrescaler, APBPrescaler, ClockSrc, PllConfig},
     time::khz,
     timer::{
-        complementary_pwm::{ComplementaryPwm, ComplementaryPwmPin},
-        simple_pwm::PwmPin,
+        simple_pwm::{PwmPin, SimplePwm},
+        CountingMode,
     },
     usart::{self, Uart},
 };
@@ -47,8 +48,8 @@ async fn main(thread_mode_spawner: Spawner) {
 async fn run(thread_mode_spawner: Spawner, interrupt_spawner: SendSpawner) {
     let mut stm_config = embassy_stm32::Config::default();
     stm_config.rcc.mux = ClockSrc::PLL(PllConfig::default()); // Make the core run at 64 Mhz
-    stm_config.rcc.ahb_pre = AHBPrescaler::NotDivided; // We want everything to run at 64 Mhz
-    stm_config.rcc.apb_pre = APBPrescaler::NotDivided; // Required for the ADC (and we want everything to run at 64 Mhz)
+    stm_config.rcc.ahb_pre = AHBPrescaler::DIV1; // We want everything to run at 64 Mhz
+    stm_config.rcc.apb_pre = APBPrescaler::DIV1; // Required for the ADC (and we want everything to run at 64 Mhz)
     let p = embassy_stm32::init(stm_config);
 
     // Remap PA11 to PA9. All other IO's are fine
@@ -65,21 +66,18 @@ async fn run(thread_mode_spawner: Spawner, interrupt_spawner: SendSpawner) {
 
     let mut config = usart::Config::default();
     config.baudrate = 921600;
-    let rs485 = Uart::new_with_de(
+    let rs485 = unwrap!(Uart::new_with_de(
         p.USART1, p.PB7, p.PA9, Irqs, p.PA12, p.DMA1_CH1, p.DMA1_CH2, config,
-    );
+    ));
 
-    let driver_pwm = ComplementaryPwm::new(
+    let driver_pwm = SimplePwm::new(
         p.TIM1,
-        None,
-        None,
+        Some(PwmPin::new_ch1(p.PA8, OutputType::PushPull)),
         Some(PwmPin::new_ch2(p.PB3, OutputType::PushPull)),
-        Some(ComplementaryPwmPin::new_ch2(p.PB0, OutputType::PushPull)),
-        None,
-        None,
         None,
         None,
         khz(40),
+        CountingMode::CenterAlignedBothInterrupts,
     );
 
     let fan_tacho_timer = p.TIM17;
