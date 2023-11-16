@@ -23,7 +23,7 @@ pub async fn coil_driver(mut driver_pwm: SimplePwm<'static, TIM1>) -> ! {
         .cr2
         .modify(|_, w| w.mms2().variant(0b0101));
 
-    driver_pwm.set_polarity(Channel::Ch2, OutputPolarity::ActiveLow);
+    driver_pwm.set_polarity(Channel::Ch1, OutputPolarity::ActiveLow);
 
     modbus::COIL_POWER_ENABLE.write(false);
     modbus::COIL_DRIVE_FREQUENCY.write(40_000);
