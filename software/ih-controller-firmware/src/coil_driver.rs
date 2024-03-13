@@ -34,7 +34,7 @@ pub async fn coil_driver(mut driver_pwm: SimplePwm<'static, TIM1>) -> ! {
         match result {
             Either::First(Some(frequency)) => {
                 driver_pwm.set_freq(Hertz(frequency.clamp(10_000, 80_000)));
-                set_duty_cycle(&mut driver_pwm, 0.5);
+                set_duty_cycle(&mut driver_pwm, modbus::COIL_POWER_DUTYCYCLE.read());
             }
             Either::Second(Some(enable)) => {
                 modbus::LED_GREEN.write(enable);
