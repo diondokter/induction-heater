@@ -37,6 +37,14 @@ pub async fn coil_driver(mut driver_pwm: SimplePwm<'static, TIM1>) -> ! {
                 set_duty_cycle(&mut driver_pwm, modbus::COIL_POWER_DUTYCYCLE.read());
             }
             Either::Second(Some(enable)) => {
+                if enable {
+                    driver_pwm.enable(Channel::Ch1);
+                    driver_pwm.enable(Channel::Ch2);
+                } else {
+                    driver_pwm.disable(Channel::Ch1);
+                    driver_pwm.disable(Channel::Ch2);
+                }
+
                 modbus::LED_GREEN.write(enable);
             }
             _ => defmt::unreachable!(),
